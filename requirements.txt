@@ -1,0 +1,5 @@
+streamlit==1.65.0
+SQLAlchemy==2.0.54
+psycopg[binary]==3.3.5
+requests==2.34.2
+tzdata==2026.4
