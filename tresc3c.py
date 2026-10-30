@@ -203,6 +203,18 @@ def chamadas(inicio: str, fim: str) -> list[dict]:
     return _lista(_req("GET", "/calls", params=p))
 
 
+def chamadas_periodo(inicio: str, fim: str, max_paginas: int = 50) -> list[dict]:
+    """Todas as chamadas do periodo, pagina por pagina (o discador passa fácil de 100 por hora)."""
+    out: list[dict] = []
+    for pag in range(1, max_paginas + 1):
+        p = {"start_date": inicio, "end_date": fim, "per_page": 100, "page": pag, "with_mailing": "true"}
+        lote = _lista(_req("GET", "/calls", params=p, timeout=60))
+        out += [c for c in lote if isinstance(c, dict) and c.get("id")]
+        if len(lote) < 100:
+            break
+    return out
+
+
 def chamada(id_chamada: str) -> dict | None:
     try:
         r = _req("GET", f"/calls/{id_chamada}", timeout=60)
