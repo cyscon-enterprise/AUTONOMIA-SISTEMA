@@ -222,7 +222,7 @@ def ver_ficha(lead_id: int) -> None:
 
 # ---------------------------------------------------------------- funil e agenda
 
-ALTURA_CARTAO = 250                         # todos iguais: a grade fica alinhada
+ALTURA_CARTAO = 222                         # todos iguais: a grade fica alinhada
 
 
 def grade(itens: list, desenhar, por_linha: int = 3) -> None:
@@ -246,6 +246,39 @@ def cartao(c: dict, onde: str = "f") -> None:
         st.markdown(f"<div class='cart-linha'>{retorno}</div><div class='cart-linha'>☎ {fones}</div>",
                     unsafe_allow_html=True)
         if st.button("Abrir", key=f"abrir{onde}{c['id']}", use_container_width=True):
+            ss.lead = c["id"]
+            st.rerun()
+
+
+ALTURA_COLUNA = 640                         # cada etapa rola por dentro; o quadro rola para o lado
+
+
+def kanban(etapas: list[dict], cards: list[dict]) -> None:
+    """O funil como quadro: uma coluna por etapa (todas, mesmo vazias), na ordem de `crm_etapas`."""
+    with st.container(key="kanban"):
+        cols = st.columns(len(etapas), gap="small")
+        for col, e in zip(cols, etapas):
+            da_etapa = [c for c in cards if c["etapa"] == e["nome"]]
+            with col:
+                st.markdown(f"<div class='kb-topo' style='border-top-color:{e['cor']}'>"
+                            f"<span>{e['nome']}</span><b>{len(da_etapa)}</b></div>", unsafe_allow_html=True)
+                with st.container(height=ALTURA_COLUNA, border=False):
+                    if not da_etapa:
+                        st.caption("vazio")
+                    for c in da_etapa:
+                        cartao_kanban(c)
+
+
+def cartao_kanban(c: dict) -> None:
+    with st.container(border=True, height=178):          # todos iguais dentro da coluna
+        retorno = (f"<div class='cart-linha {'late' if c['atrasado'] else ''}'>"
+                   f"{'atrasado' if c['atrasado'] else 'retorno'}: {br(c['proximo_contato'])}</div>"
+                   if c["proximo_contato"] else "")
+        fones = " · ".join(t["exibir"] for t in c["telefones"][:1]) or "sem telefone"
+        st.markdown(f"<div class='cart-nome' title=\"{c['nome']}\">{c['nome']}</div>"
+                    f"<div class='cart-linha'>{c['cidade']}{('/' + c['estado']) if c['estado'] else ''}</div>"
+                    f"{retorno or selo(c['grupo'])}<div class='cart-linha'>☎ {fones}</div>", unsafe_allow_html=True)
+        if st.button("Abrir", key=f"kb{c['id']}", use_container_width=True):
             ss.lead = c["id"]
             st.rerun()
 
@@ -308,14 +341,7 @@ def pagina() -> None:
     telas_vendedor.faixa("🗂", "New Names · Motor de Vendas", f"{len(cards)} leads · abra o card para ligar pela 3C")
     aba_funil, aba_agenda = st.tabs(["Funil", "Agenda"])
     with aba_funil:
-        usadas = [e for e in q["etapas"] if any(c["etapa"] == e["nome"] for c in cards)]
-        if not usadas:
-            st.info("Nenhum lead com esse filtro.")
-        else:
-            abas = st.tabs([f"{e['nome']} ({sum(c['etapa'] == e['nome'] for c in cards)})" for e in usadas])
-            for aba, e in zip(abas, usadas):
-                with aba:
-                    grade([c for c in cards if c["etapa"] == e["nome"]], cartao)
+        kanban(q["etapas"], cards)
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = [c for c in q["cards"] if c["proximo_contato"]]

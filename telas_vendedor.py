@@ -304,7 +304,7 @@ def grade(itens: list, desenhar, por_linha: int = 3) -> None:
 
 
 def cartao(l: dict, onde: str) -> None:
-    with st.container(border=True, height=250):          # todos iguais: a grade fica alinhada
+    with st.container(border=True, height=222):          # todos iguais: a grade fica alinhada
         dono = f" · 👤 {l['vendedor']}" if l.get("vendedor_id") != eu()["id"] else ""   # so na visao de todos
         retorno = (f"<span class='{'late' if l['atrasado'] else ''}'>{'atrasado' if l['atrasado'] else 'retorno'}: "
                    f"{br(l['proximo_contato'])}</span>") if l["proximo_contato"] else "&nbsp;"
