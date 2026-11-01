@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import re
 from urllib.parse import quote
 
@@ -127,6 +128,15 @@ def bloco_ia(chamada_3c: str, contexto: str, titulo: str, salvar_no_historico) -
         except ia_ligacoes.ErroIA as e:
             ss.msg = ("erro", f"IA: {e}")
         st.rerun()
+
+
+def dados_compactos(campos: list[tuple[str, str]], reg: dict) -> None:
+    """Os dados do cadastro num bloco so, linha colada na outra (um st.markdown por campo deixa um
+    espaco grande entre as linhas)."""
+    linhas = [f"<div style='margin:0 0 3px'><b>{html.escape(r)}:</b> {html.escape(str(reg[k]))}</div>"
+              for k, r in campos if reg.get(k)]
+    st.markdown("<div style='font-size:14px;line-height:1.45'>" + "".join(linhas) + "</div>"
+                if linhas else "<span style='color:#888'>Sem dados.</span>", unsafe_allow_html=True)
 
 
 def br(v) -> str:
@@ -450,9 +460,7 @@ def ficha_cliente(cnpj: str) -> None:
                       ("contato_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_financeiro", "Contato Financeiro"),
                       ("contato_fiscal", "Contato Fiscal"), ("contato_contabil", "Contato Contábil"),
                       ("socios_rf", "Sócios (Receita)")]
-            for k, r in campos:
-                if e.get(k):
-                    st.markdown(f"**{r}:** {e[k]}")
+            dados_compactos(campos, e)
         st.markdown("#### Histórico")
         linha = [("ch", c["quando"], c) for c in f["chamadas"]]
         linha += [("h", h["quando"], h) for h in f["historico"] if not str(h.get("texto") or "").startswith("Discador 3C")]

@@ -173,9 +173,7 @@ def ver_ficha(lead_id: int) -> None:
                       ("contato_de_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_fiscal", "Contato Fiscal"),
                       ("contato_financeiro", "Contato Financeiro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
                       ("historico_crmtotvs", "Histórico no CRM TOTVS")]
-            for k, r in campos:
-                if L.get(k):
-                    st.markdown(f"**{r}:** {L[k]}")
+            telas_vendedor.dados_compactos(campos, L)
         st.markdown("#### Histórico")
         c_at = st.columns([3, 1])[1]
         if c_at.button("🔄 atualizar ligações", use_container_width=True):
