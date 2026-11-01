@@ -11,8 +11,11 @@ from __future__ import annotations
 import streamlit as st
 
 CSS = """
+/* barra de rolagem EM CIMA do quadro: o quadro e virado de cabeca para baixo (a barra vai para o topo)
+   e cada coluna e desvirada, entao o conteudo aparece normal */
 .kb-board{display:flex;gap:10px;overflow-x:scroll;padding:2px 2px 10px;scrollbar-width:auto;
-  scrollbar-color:#9fb0cc #e3e8f2}
+  scrollbar-color:#9fb0cc #e3e8f2;transform:rotateX(180deg)}
+.kb-col{transform:rotateX(180deg)}
 .kb-board::-webkit-scrollbar{height:14px}
 .kb-board::-webkit-scrollbar-track{background:#e3e8f2;border-radius:8px}
 .kb-board::-webkit-scrollbar-thumb{background:#9fb0cc;border-radius:8px;border:3px solid #e3e8f2}
@@ -24,7 +27,7 @@ CSS = """
 .kb-head b{background:#eef2f9;border-radius:10px;padding:0 7px;font-size:11px;color:#5b6b85}
 .kb-list{overflow-y:auto;padding:0 6px 6px;flex:1;min-height:60px}
 .kb-card{background:#fff;border:1px solid #dfe5f0;border-radius:8px;padding:8px 9px;margin-bottom:6px;
-  height:104px;box-sizing:border-box;cursor:grab;box-shadow:0 1px 2px rgba(15,42,92,.06);overflow:hidden}
+  height:118px;box-sizing:border-box;cursor:grab;box-shadow:0 1px 2px rgba(15,42,92,.06);overflow:hidden}
 .kb-card:hover{border-color:#1565c0}
 .kb-card.drag{opacity:.45}
 .kb-nome{font-weight:700;color:#0f2a5c;font-size:13px;line-height:1.25;height:2.5em;overflow:hidden;

@@ -125,6 +125,34 @@ def primeiro_acesso() -> None:
     st.stop()
 
 
+def tela_convite(token: str, c: dict) -> None:
+    """Link de convite (?convite=...): a pessoa cria o proprio login e senha, de uso unico."""
+    _, meio, _ = st.columns([1, 1.1, 1])
+    with meio:
+        st.write("")
+        st.image(LOGO, use_container_width=True)
+        st.markdown(f"<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Convite: crie seu acesso de "
+                    f"<b>{'administrador' if c['admin'] else 'vendedor'}</b></p>", unsafe_allow_html=True)
+        with st.form("convite"):
+            nome = st.text_input("Seu nome")
+            login = st.text_input("Login (ex.: maria)")
+            senha = st.text_input("Senha (mín. 8)", type="password")
+            senha2 = st.text_input("Repita a senha", type="password")
+            ok = st.form_submit_button("Criar meu acesso", type="primary", use_container_width=True)
+        if ok:
+            if senha != senha2:
+                st.error("As senhas não conferem.")
+                st.stop()
+            r = V.usar_convite(token, nome, login, senha)
+            if r.get("erro"):
+                st.error(r["erro"])
+                st.stop()
+            st.query_params.clear()
+            ss.usuario = V.entrar(login, senha)
+            st.rerun()
+    st.stop()
+
+
 def tela_login() -> None:
     _, meio, _ = st.columns([1, 1.1, 1])
     with meio:
@@ -145,6 +173,11 @@ def tela_login() -> None:
         st.error("Login ou senha incorretos.")
     st.stop()
 
+
+if not ss.usuario and st.query_params.get("convite"):
+    _c = V.convite(st.query_params["convite"])
+    if _c:
+        tela_convite(st.query_params["convite"], _c)
 
 if not ss.usuario:
     if not V.tem_vendedor():

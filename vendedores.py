@@ -75,6 +75,13 @@ DDL = [
         entrou_carteira BOOLEAN NOT NULL DEFAULT FALSE,
         lido_em TIMESTAMP NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS ix_disc_cham_cnpj ON crm_discador_chamadas (cnpj)",
+    """CREATE TABLE IF NOT EXISTS crm_convites (
+        token_hash CHAR(64) PRIMARY KEY,
+        admin BOOLEAN NOT NULL DEFAULT FALSE,
+        criado_em TIMESTAMP NOT NULL,
+        expira_em TIMESTAMP NOT NULL,
+        usado_em TIMESTAMP,
+        login VARCHAR(40))""",
     """CREATE TABLE IF NOT EXISTS crm_telefones_extra (
         cnpj VARCHAR(14) NOT NULL,
         telefone VARCHAR(11) NOT NULL,
@@ -180,6 +187,39 @@ def ativar(vendedor_id: int, ativo: bool) -> dict:
     with dados.engine().begin() as conn:
         conn.execute(sa.text("UPDATE crm_vendedores SET ativo = :a WHERE id = :i"), {"a": ativo, "i": vendedor_id})
     return {"ok": True, "mensagem": "Vendedor reativado." if ativo else "Vendedor desativado (a carteira fica)."}
+
+
+def criar_convite(admin: bool = False, horas: int = 48) -> str:
+    """Link de convite de uso unico: quem abre cria o proprio login e senha. So o hash fica no banco."""
+    token = secrets.token_urlsafe(24)
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("INSERT INTO crm_convites (token_hash, admin, criado_em, expira_em) VALUES (:h, :a, :c, :e)"),
+                     {"h": hashlib.sha256(token.encode()).hexdigest(), "a": admin, "c": dados.agora(),
+                      "e": dados.agora() + dt.timedelta(hours=horas)})
+    return token
+
+
+def convite(token: str) -> dict | None:
+    """O convite valido (nao usado, nao vencido) desse token, ou None."""
+    if not token:
+        return None
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT * FROM crm_convites WHERE token_hash = :h AND usado_em IS NULL AND expira_em > :a",
+               h=hashlib.sha256(token.encode()).hexdigest(), a=dados.agora())
+    return r[0] if r else None
+
+
+def usar_convite(token: str, nome: str, login: str, senha: str) -> dict:
+    c = convite(token)
+    if not c:
+        return {"erro": "Convite inválido, vencido ou já usado."}
+    r = criar(nome, login, senha, admin=c["admin"])
+    if r.get("erro"):
+        return r
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("UPDATE crm_convites SET usado_em = :a, login = :l WHERE token_hash = :h"),
+                     {"a": dados.agora(), "l": _login_ok(login), "h": c["token_hash"]})
+    return r
 
 
 def definir_admin(vendedor_id: int, admin: bool) -> dict:
