@@ -130,11 +130,36 @@ def bloco_ia(chamada_3c: str, contexto: str, titulo: str, salvar_no_historico) -
         st.rerun()
 
 
+# enderecos que nao sao o site da empresa: governo, tribunais, cadastros de CNPJ, buscadores, redes sociais
+SITE_NAO_E_DA_EMPRESA = re.compile(
+    r"(\.gov\.br|\.jus\.br|\.leg\.br|\.mp\.br|cnpj|econodata|casadosdados|empresaqui|solutudo|guiamais|telelistas|"
+    r"apontador|facebook\.|instagram\.|linkedin\.|consultasocio|serasa|jusbrasil|escavador|informecadastral|"
+    r"listamais|google\.)", re.I)
+
+
+def site_da_empresa(url) -> str | None:
+    """So o endereco principal (https://dominio) e so se o dominio for mesmo da empresa: o cadastro
+    as vezes traz um PDF ou uma pagina de governo/diretorio no lugar do site."""
+    m = re.match(r"^\s*(?:https?://)?(?:www\.)?([^/\s?#]+\.[a-z]{2,}(?:\.[a-z]{2})?)", str(url or ""), re.I)
+    if not m or SITE_NAO_E_DA_EMPRESA.search(m.group(1)):
+        return None
+    return f"https://{m.group(1).lower()}"
+
+
 def dados_compactos(campos: list[tuple[str, str]], reg: dict) -> None:
     """Os dados do cadastro num bloco so, linha colada na outra (um st.markdown por campo deixa um
-    espaco grande entre as linhas)."""
-    linhas = [f"<div style='margin:0 0 3px'><b>{html.escape(r)}:</b> {html.escape(str(reg[k]))}</div>"
-              for k, r in campos if reg.get(k)]
+    espaco grande entre as linhas). O site aparece limpo e como link, ou nao aparece."""
+    linhas = []
+    for k, r in campos:
+        v = reg.get(k)
+        if k == "site_da_empresa":
+            v = site_da_empresa(v)
+            if v:
+                linhas.append(f"<div style='margin:0 0 3px'><b>{html.escape(r)}:</b> "
+                              f"<a href='{html.escape(v)}' target='_blank'>{html.escape(v[8:])}</a></div>")
+            continue
+        if v:
+            linhas.append(f"<div style='margin:0 0 3px'><b>{html.escape(r)}:</b> {html.escape(str(v))}</div>")
     st.markdown("<div style='font-size:14px;line-height:1.45'>" + "".join(linhas) + "</div>"
                 if linhas else "<span style='color:#888'>Sem dados.</span>", unsafe_allow_html=True)
 
