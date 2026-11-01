@@ -59,7 +59,8 @@ ss.setdefault("sessao3c", None)
 ss.setdefault("msg", None)
 
 st.markdown("""<style>
-.block-container{padding-top:1.4rem}
+.block-container{padding-top:3.2rem}
+[data-testid="stSidebarUserContent"]{padding-top:1rem}
 .selo{font-size:12px;padding:2px 8px;border-radius:5px;display:inline-block}
 .ok{background:#e7f6ec;color:#1a7f4b}.err{background:#fdecec;color:#b42318}.esp{background:#fff7ed;color:#b0562a}
 .late{color:#b42318;font-weight:600}
@@ -121,21 +122,21 @@ if not ss.usuario:
 ss.quem = ss.usuario["nome"]                       # assina tudo que se registra no CRM
 
 with st.sidebar:
+    if ss.get("sessao3c"):
+        # o telefone web (WebRTC) da 3C: primeiro da barra (a vista) e fora das paginas, para nao cair
+        st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")
+        components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=360, scrolling=True)
+        st.divider()
     st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}")
     if st.button("Sair do CRM"):
         tresc.sair(ss.get("sessao3c"))
         for k in list(ss.keys()):
             del ss[k]
         st.rerun()
-    if ss.get("sessao3c"):
-        # o telefone web (WebRTC) da 3C: fica na barra para nao cair ao trocar de pagina
-        st.divider()
-        st.markdown(f"**Telefone · ramal {ss.sessao3c['ramal']}**")
-        components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=420, scrolling=True)
 
 paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=True),
            st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira")]
 if ss.usuario.get("admin"):
     paginas += [st.Page(tela_new_names.pagina, title="New Names (Motor de Vendas)", icon="🗂", url_path="new-names"),
                 st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
-st.navigation(paginas).run()
+st.navigation(paginas, position="top").run()             # menu no topo: a barra fica so para o telefone

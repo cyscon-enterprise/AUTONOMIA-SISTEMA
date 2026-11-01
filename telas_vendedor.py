@@ -90,11 +90,10 @@ def sair_3c() -> None:
 
 def pagina_discador() -> None:
     mostrar_msg()
-    st.title("Discador")
     t = V.turno_aberto()
     meu = bool(t and t["vendedor_id"] == eu()["id"])
     if meu:
-        st.success(f"Seu turno está aberto desde {t['inicio']:%H:%M}. Tudo que o discador conectar agora é seu.")
+        st.markdown(f"### Discador · turno aberto desde {t['inicio']:%H:%M}")
         s3 = ss.get("sessao3c")
         if not s3:
             st.warning("Seu ramal não está conectado neste portal.")
@@ -109,9 +108,11 @@ def pagina_discador() -> None:
         if s3:
             painel_na_linha()
     elif t:
+        st.markdown("### Discador")
         st.warning(f"O discador está com **{t['nome']}** desde {t['inicio']:%H:%M}. A 3C tem um usuário só: "
                    "espere o turno dele acabar.")
     else:
+        st.markdown("### Discador")
         st.info("Ninguém está no discador agora. Entre com o ramal e a senha da 3C para começar.")
         form_conectar_3c("▶ Iniciar discador")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
@@ -137,8 +138,8 @@ def painel_ramal(s3: dict) -> None:
             lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
             camps = {c["nome"]: c["id"] for c in lista}
             nome = st.selectbox("Campanha", list(camps)) if len(camps) > 1 else next(iter(camps))
-            st.caption("1) Na barra lateral, permita o microfone e espere o telefone ficar pronto (uns 10 s). "
-                       "2) Clique abaixo: o discador começa a ligar e as chamadas tocam no telefone da barra.")
+            st.caption("Antes: no telefone da barra lateral, permita o microfone e espere ele ficar pronto (uns 10 s). "
+                       "Depois clique abaixo: o discador começa a ligar e as chamadas tocam no telefone da barra.")
             if st.button(f"📞 Entrar na campanha {nome} e começar a discar", type="primary"):
                 try:
                     tresc.entrar_campanha(s3["token"], camps[nome])
