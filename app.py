@@ -197,7 +197,10 @@ def escolher_empresa() -> None:
     _, meio, _ = st.columns([1, 2.2, 1])
     with meio:
         st.image(LOGO, width=340)
-        st.markdown(f"### Olá, {ss.usuario['nome'].split()[0]}! Para qual empresa você vai vender hoje?")
+        st.markdown(f"### Olá, {ss.usuario['nome'].split()[0]},")
+        st.markdown("Bem-vindo à **AutonomIA Seller**, sua plataforma de vendedor autônomo com assistente "
+                    "pessoal de IA.")
+        st.markdown("#### Para qual empresa você vai vender hoje?")
         st.caption("Cada empresa tem a sua base de clientes, o seu produto e a sua comissão.")
         if not empresas:
             st.info("Nenhuma empresa disponível no momento.")
