@@ -16,6 +16,7 @@ import os
 import time
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import dados
 import tela_new_names
@@ -122,9 +123,15 @@ ss.quem = ss.usuario["nome"]                       # assina tudo que se registra
 with st.sidebar:
     st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}")
     if st.button("Sair do CRM"):
+        tresc.sair(ss.get("sessao3c"))
         for k in list(ss.keys()):
             del ss[k]
         st.rerun()
+    if ss.get("sessao3c"):
+        # o telefone web (WebRTC) da 3C: fica na barra para nao cair ao trocar de pagina
+        st.divider()
+        st.markdown(f"**Telefone · ramal {ss.sessao3c['ramal']}**")
+        components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=420, scrolling=True)
 
 paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=True),
            st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira")]

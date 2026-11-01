@@ -56,6 +56,34 @@ def _sincronizar() -> None:
 
 # ---------------------------------------------------------------- Discador
 
+def form_conectar_3c(rotulo: str) -> None:
+    """Login do ramal na 3C pelo portal: a senha so passa por aqui e vira o token do agente."""
+    with st.form("conectar3c"):
+        c1, c2 = st.columns([1, 2])
+        ramal = c1.text_input("Ramal da 3C", value="1003")
+        senha = c2.text_input("Senha da 3C", type="password")
+        ok = st.form_submit_button(rotulo, type="primary")
+    if ok:
+        t = V.turno_aberto()
+        if not (t and t["vendedor_id"] == eu()["id"]):
+            r = V.iniciar_turno(eu())
+            if r.get("erro"):
+                avisar(r)
+                st.rerun()
+        try:
+            ss.sessao3c = tresc.autenticar(ramal, senha)
+            ss.msg = ("ok", "Conectado. Permita o microfone no telefone da barra lateral e espere ele ficar pronto.")
+        except tresc.Erro3C as e:
+            ss.msg = ("erro", f"3C: {e}")
+        st.rerun()
+
+
+def sair_3c() -> None:
+    tresc.sair(ss.get("sessao3c"))
+    ss.sessao3c = None
+    ss.pop("ultima_chamada", None)
+
+
 def pagina_discador() -> None:
     mostrar_msg()
     st.title("Discador")
@@ -63,22 +91,26 @@ def pagina_discador() -> None:
     meu = bool(t and t["vendedor_id"] == eu()["id"])
     if meu:
         st.success(f"Seu turno está aberto desde {t['inicio']:%H:%M}. Tudo que o discador conectar agora é seu.")
-        if st.button("⏹ Encerrar meu turno", type="primary"):
-            with st.spinner("Fechando a conta do turno com a 3C…"):
+        s3 = ss.get("sessao3c")
+        if not s3:
+            st.warning("Seu ramal não está conectado neste portal.")
+            form_conectar_3c("Conectar meu ramal")
+        else:
+            painel_ramal(s3)
+        if st.button("⏹ Encerrar meu turno"):
+            with st.spinner("Saindo da 3C e fechando a conta do turno…"):
+                sair_3c()
                 avisar(V.encerrar_turno(eu()))
             st.rerun()
-        st.caption("Aperte também pausar/sair no discador da 3C quando parar.")
-        painel_na_linha()
+        if s3:
+            painel_na_linha()
     elif t:
         st.warning(f"O discador está com **{t['nome']}** desde {t['inicio']:%H:%M}. A 3C tem um usuário só: "
                    "espere o turno dele acabar.")
     else:
-        st.info("Ninguém está no discador agora.")
-        if st.button("▶ Iniciar discador", type="primary"):
-            avisar(V.iniciar_turno(eu()))
-            st.rerun()
-        st.caption("Inicie aqui e depois entre na campanha no discador da 3C. Só as chamadas feitas com o seu "
-                   "turno aberto vão para você.")
+        st.info("Ninguém está no discador agora. Entre com o ramal e a senha da 3C para começar.")
+        form_conectar_3c("▶ Iniciar discador")
+        st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
 
     st.markdown("#### Chamadas dos seus últimos turnos")
     meus = [x for x in V.turnos_recentes(7) if x["vendedor_id"] == eu()["id"]]
@@ -90,19 +122,53 @@ def pagina_discador() -> None:
                     f"{x['carteira']} entraram na carteira")
 
 
-@st.fragment(run_every="15s")
+@st.fragment(run_every="10s")
+def painel_ramal(s3: dict) -> None:
+    """Estado do ramal na 3C e a entrada na campanha (depois que o telefone web registrou)."""
+    status = tresc.status_ramal(s3["ramal"])
+    rotulo = tresc.STATUS_AGENTE.get(status, f"status {status}") if status is not None else "sem resposta da 3C"
+    with st.container(border=True):
+        st.markdown(f"**Ramal {s3['ramal']}** {s3.get('nome') or ''} · {rotulo}")
+        if not status:                                  # desconectado da campanha
+            lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
+            camps = {c["nome"]: c["id"] for c in lista}
+            nome = st.selectbox("Campanha", list(camps)) if len(camps) > 1 else next(iter(camps))
+            st.caption("1) Na barra lateral, permita o microfone e espere o telefone ficar pronto (uns 10 s). "
+                       "2) Clique abaixo: o discador começa a ligar e as chamadas tocam no telefone da barra.")
+            if st.button(f"📞 Entrar na campanha {nome} e começar a discar", type="primary"):
+                try:
+                    tresc.entrar_campanha(s3["token"], camps[nome])
+                    st.success("Pedido enviado. A 3C liga para o seu telefone web para conectar: atenda na barra lateral.")
+                except tresc.Erro3C as e:
+                    st.error(f"3C: {e}")
+        c1, c2 = st.columns(2)
+        if status and c1.button("Sair da campanha (pausa longa)"):
+            tresc.sair(s3)
+            st.rerun(scope="fragment")
+        if c2.button("Trocar ramal / reconectar"):
+            sair_3c()
+            st.rerun()
+
+
+@st.fragment(run_every="10s")
 def painel_na_linha() -> None:
-    """Atualiza sozinho: le as chamadas novas e mostra quem o discador conectou."""
+    """Atualiza sozinho: le as chamadas novas, mostra quem o discador conectou e da a baixa na 3C."""
     _sincronizar()
     with st.container(border=True):
         st.markdown("#### 📞 Na linha agora")
         n = V.na_linha()
+        if n and n.get("id"):
+            ss.ultima_chamada = n                       # some das ativas ao desligar: guarda para a baixa
+        if not n and ss.get("ultima_chamada"):
+            n = ss.ultima_chamada
+            st.caption("Ligação encerrada: dê a baixa abaixo para o discador seguir.")
         if not n:
-            st.caption("Ninguém na linha. (atualiza sozinho a cada 15 s)")
+            st.caption("Ninguém na linha. (atualiza sozinho a cada 10 s)")
             return
         f = V.ficha(n["cnpj"])
         if not f:
             st.caption(f"CNPJ {n['cnpj']} não está na mestra.")
+            baixa_na_tela(n)
             return
         e = f["empresa"]
         st.markdown(f"### {e.get('nome_fantasia') or e.get('nome')}")
@@ -112,7 +178,34 @@ def painel_na_linha() -> None:
             st.warning(f"Este cliente já é da carteira de {f['dono']['nome']}.")
         for h in f["historico"][:4]:
             st.markdown(f"**{br(h['quando'])}** · {h.get('quem') or ''} · {h.get('texto') or h.get('etapa_para') or ''}")
-        st.caption("Dê a baixa na 3C ao terminar: Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
+        baixa_na_tela(n)
+
+
+def baixa_na_tela(n: dict) -> None:
+    """Qualifica a chamada na 3C daqui mesmo; a sincronizacao leva o cliente para a carteira."""
+    if not n.get("id"):
+        return
+    st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
+    try:
+        quals = tresc.qualificacoes_crm()
+    except tresc.Erro3C as e:
+        st.caption(f"3C: {e}")
+        return
+    nota = st.text_input("Anotação (opcional)", key=f"nota{n['id']}")
+    c1, c2 = st.columns(2)
+    d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
+    h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{n['id']}")
+    cols = st.columns(min(len(quals), 4) or 1)
+    for i, q in enumerate(quals):
+        if cols[i % len(cols)].button(q["nome"], key=f"q{n['id']}{q['id']}", use_container_width=True):
+            ret = f"{d.isoformat()} {h:%H:%M}" if d else None
+            try:
+                tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
+                ss.pop("ultima_chamada", None)
+                V.sincronizar(forcar=True)
+                st.success(f"Baixa dada: {q['nome']}.")
+            except tresc.Erro3C as e:
+                st.error(f"3C: {e}")
 
 
 # ---------------------------------------------------------------- Carteira

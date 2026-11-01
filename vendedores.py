@@ -508,5 +508,5 @@ def na_linha() -> dict | None:
             cnpj = r[0]["cnpj"] if r else ""
         if cnpj:
             return {"cnpj": cnpj, "telefone": dados.normalizar(ch.get("number") or ch.get("phone")),
-                    "status": ch.get("_grupo") or ""}
+                    "status": ch.get("_grupo") or "", "id": str(ch.get("id") or ch.get("call_id") or "")}
     return None

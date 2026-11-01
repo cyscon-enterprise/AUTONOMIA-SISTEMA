@@ -113,6 +113,52 @@ def entrar(ramal: str, senha: str, campanha: int | str | None = None) -> dict:
                        "campanha_nome": nome_camp, "token": tk}}
 
 
+def autenticar(ramal: str, senha: str) -> dict:
+    """So o login do ramal (token do agente + campanhas), SEM entrar em campanha: no discador do portal
+    o telefone web precisa estar registrado antes do login na campanha."""
+    ramal = str(ramal or "").strip()
+    if not ramal or not senha:
+        raise Erro3C("informe o ramal e a senha da 3C.")
+    base = f"https://{DOMINIO}.3c.plus/api/v1"
+    r = _agente_req("POST", f"{base}/authenticate", dados={"user": ramal, "password": senha})
+    u = r.get("data", r) if isinstance(r, dict) else {}
+    tk = u.get("api_token") or u.get("token")
+    if not tk:
+        raise Erro3C("a 3C nao devolveu o token do agente.")
+    camps = [{"id": c["id"], "nome": c.get("name") or str(c["id"])}
+             for c in _lista(_agente_req("GET", f"{base}/agent/campaigns", tk)) if isinstance(c, dict) and c.get("id")]
+    if not camps:
+        raise Erro3C("esse ramal nao pertence a nenhuma campanha na 3C.")
+    return {"ramal": ramal, "nome": u.get("name") or "", "token": tk, "campanhas": camps}
+
+
+def webphone_url(token_agente: str) -> str:
+    """Ramal web (WebRTC) da 3C para embutir no portal: e por ele que o vendedor fala e ouve."""
+    return f"https://{DOMINIO}.3c.plus/extension?api_token={token_agente}"
+
+
+def entrar_campanha(token_agente: str, campanha: int | str) -> dict:
+    """Poe o agente na campanha em modo discador (sem `mode`: o discador manda as chamadas sozinho).
+    So funciona com o ramal web ja registrado."""
+    return _agente_req("POST", f"https://{DOMINIO}.3c.plus/api/v1/agent/login", token_agente,
+                       dados={"campaign": int(campanha)})
+
+
+STATUS_AGENTE = {0: "desconectado", 1: "livre, esperando chamada", 2: "em ligação", 3: "pós-atendimento (qualificar)",
+                 4: "modo manual", 5: "em pausa", 6: "em pausa"}
+
+
+def status_ramal(ramal: str) -> int | None:
+    """Status do ramal pelo token de servico (/agents/status); None se a 3C nao responder."""
+    try:
+        for a in _lista(_req("GET", "/agents/status", timeout=15)):
+            if str(a.get("extension")) == str(ramal):
+                return int(a.get("status") or 0)
+    except (Erro3C, ValueError, TypeError):
+        return None
+    return 0
+
+
 def sair(sessao: dict | None) -> None:
     tk = (sessao or {}).get("token")
     if tk:
