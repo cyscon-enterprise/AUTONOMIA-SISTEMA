@@ -1,6 +1,17 @@
 [theme]
 base = "light"
-primaryColor = "#1f6feb"
+primaryColor = "#1565c0"
+backgroundColor = "#f6f8fc"
+secondaryBackgroundColor = "#eef2f9"
+textColor = "#1b2a41"
+baseRadius = "10px"
+borderColor = "#dfe5f0"
+showWidgetBorder = true
+
+[theme.sidebar]
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#eef2f9"
+borderColor = "#dfe5f0"
 
 [server]
 headless = true

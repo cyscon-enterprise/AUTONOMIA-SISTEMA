@@ -32,6 +32,16 @@ def mostrar_msg() -> None:
         ss.msg = None
 
 
+def faixa(icone: str, titulo: str, sub: str = "") -> None:
+    """Cabecalho das paginas: faixa azul com titulo e subtitulo."""
+    st.markdown(f"<div class='faixa'><div style='font-size:26px'>{icone}</div><div><b>{titulo}</b><br>"
+                f"<span>{sub}</span></div></div>", unsafe_allow_html=True)
+
+
+def kpi(col, rotulo: str, valor) -> None:
+    col.markdown(f"<div class='kpi'><small>{rotulo}</small><div>{valor}</div></div>", unsafe_allow_html=True)
+
+
 def br(v) -> str:
     if not v:
         return ""
@@ -93,7 +103,13 @@ def pagina_discador() -> None:
     t = V.turno_aberto()
     meu = bool(t and t["vendedor_id"] == eu()["id"])
     if meu:
-        st.markdown(f"### Discador · turno aberto desde {t['inicio']:%H:%M}")
+        faixa("📞", "Discador", f"Turno aberto desde {t['inicio']:%H:%M} · tudo que o discador conectar agora é seu")
+        atual = next((x for x in V.turnos_recentes(1) if x["id"] == t["id"]), {})
+        k = st.columns(3)
+        kpi(k[0], "Chamadas no turno", atual.get("chamadas", 0))
+        kpi(k[1], "Entraram na carteira", atual.get("carteira", 0))
+        kpi(k[2], "Minha carteira", len(V.carteira(eu()["id"])))
+        st.write("")
         s3 = ss.get("sessao3c")
         if not s3:
             st.warning("Seu ramal não está conectado neste portal.")
@@ -108,11 +124,11 @@ def pagina_discador() -> None:
         if s3:
             painel_na_linha()
     elif t:
-        st.markdown("### Discador")
+        faixa("📞", "Discador", "Ligações automáticas da campanha")
         st.warning(f"O discador está com **{t['nome']}** desde {t['inicio']:%H:%M}. A 3C tem um usuário só: "
                    "espere o turno dele acabar.")
     else:
-        st.markdown("### Discador")
+        faixa("📞", "Discador", "Ligações automáticas da campanha")
         st.info("Ninguém está no discador agora. Entre com o ramal e a senha da 3C para começar.")
         form_conectar_3c("▶ Iniciar discador")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
@@ -133,7 +149,9 @@ def painel_ramal(s3: dict) -> None:
     status = tresc.status_ramal(s3["ramal"])
     rotulo = tresc.STATUS_AGENTE.get(status, f"status {status}") if status is not None else "sem resposta da 3C"
     with st.container(border=True):
-        st.markdown(f"**Ramal {s3['ramal']}** {s3.get('nome') or ''} · {rotulo}")
+        cor = {0: "#b42318", 1: "#1a7f4b", 2: "#1565c0", 3: "#d97706"}.get(status, "#8a94a6")
+        st.markdown(f"<span class='ponto' style='background:{cor}'></span>**Ramal {s3['ramal']}** "
+                    f"{s3.get('nome') or ''} · {rotulo}", unsafe_allow_html=True)
         if not status:                                  # desconectado da campanha
             lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
             camps = {c["nome"]: c["id"] for c in lista}
@@ -230,8 +248,15 @@ def _carteira(todos: bool) -> None:
     if ss.get("cliente"):
         ficha_cliente(ss.cliente)
         return
-    st.title("Carteiras de todos os vendedores" if todos else "Minha carteira")
     lista = V.carteira(None if todos else eu()["id"])
+    faixa("👥" if todos else "📇", "Carteiras de todos os vendedores" if todos else "Minha carteira",
+          "Clientes com quem o time já falou" if todos else "Clientes com quem você falou pelo discador")
+    k = st.columns(3)
+    hoje = dados.agora().date().isoformat()
+    kpi(k[0], "Clientes", len(lista))
+    kpi(k[1], "Retornos hoje", sum(1 for l in lista if (l["proximo_contato"] or "")[:10] == hoje))
+    kpi(k[2], "Atrasados", sum(1 for l in lista if l["atrasado"]))
+    st.write("")
     c1, c2 = st.columns([3, 1])
     busca = c1.text_input("Buscar empresa, CNPJ ou cidade", label_visibility="collapsed",
                           placeholder="Buscar empresa, CNPJ ou cidade")
@@ -388,7 +413,7 @@ def ficha_cliente(cnpj: str) -> None:
 
 def pagina_gestao() -> None:
     mostrar_msg()
-    st.title("Gestão")
+    faixa("⚙", "Gestão", "Vendedores e turnos do discador")
     a_vend, a_turnos = st.tabs(["Vendedores", "Turnos do discador"])
     with a_vend:
         for v in V.lista():

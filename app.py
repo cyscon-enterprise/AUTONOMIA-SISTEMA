@@ -24,7 +24,12 @@ import telas_vendedor
 import tresc3c as tresc
 import vendedores as V
 
-st.set_page_config(page_title="CRM Cyscon", page_icon="📞", layout="wide")
+PASTA = os.path.dirname(os.path.abspath(__file__))
+LOGO = os.path.join(PASTA, "static", "logo.png")          # logo e icone feitos no Canva (31/10/2026)
+ICONE = os.path.join(PASTA, "static", "icone.png")
+
+st.set_page_config(page_title="CRM Cyscon", page_icon=ICONE, layout="wide")
+st.logo(LOGO, size="large", icon_image=ICONE)
 
 
 def _segredo(nome: str, *alternativas: str) -> str:
@@ -59,13 +64,28 @@ ss.setdefault("sessao3c", None)
 ss.setdefault("msg", None)
 
 st.markdown("""<style>
-.block-container{padding-top:3.2rem}
+.block-container{padding-top:3.6rem;max-width:1280px}
 [data-testid="stSidebarUserContent"]{padding-top:1rem}
+h1,h2,h3{color:#0f2a5c;letter-spacing:-.01em}
+h1{font-size:2rem !important}
+/* cartoes: fundo branco e sombra leve sobre o fundo cinza-azulado */
+[data-testid="stVerticalBlockBorderWrapper"]:has(> div > [data-testid="stVerticalBlock"]){background:#fff;
+  box-shadow:0 1px 2px rgba(15,42,92,.06),0 4px 14px rgba(15,42,92,.05)}
+[data-testid="stForm"]{background:#fff;box-shadow:0 1px 2px rgba(15,42,92,.06),0 4px 14px rgba(15,42,92,.05)}
+.stButton button,.stFormSubmitButton button{font-weight:600}
+[data-testid="stHeader"]{background:#ffffffee;border-bottom:1px solid #e3e8f2}
 .selo{font-size:12px;padding:2px 8px;border-radius:5px;display:inline-block}
 .ok{background:#e7f6ec;color:#1a7f4b}.err{background:#fdecec;color:#b42318}.esp{background:#fff7ed;color:#b0562a}
 .late{color:#b42318;font-weight:600}
-.insight{background:#f5f8ff;border:1px solid #dbe6fb;border-left:3px solid #1f6feb;border-radius:8px;
+.insight{background:#f5f8ff;border:1px solid #dbe6fb;border-left:3px solid #1565c0;border-radius:8px;
          padding:10px 12px;font-size:14px;line-height:1.5}
+.faixa{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#0f2a5c,#1565c0);color:#fff;
+       border-radius:12px;padding:14px 20px;margin-bottom:14px}
+.faixa b{font-size:20px}.faixa span{opacity:.85;font-size:14px}
+.kpi{background:#fff;border:1px solid #e3e8f2;border-radius:12px;padding:12px 16px}
+.kpi small{color:#5b6b85;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.kpi div{font-size:26px;font-weight:700;color:#0f2a5c;line-height:1.2}
+.ponto{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>""", unsafe_allow_html=True)
 
 
@@ -99,11 +119,16 @@ def primeiro_acesso() -> None:
 
 
 def tela_login() -> None:
-    st.title("CRM Cyscon")
-    with st.form("entrar"):
-        login = st.text_input("Login")
-        senha = st.text_input("Senha", type="password")
-        ok = st.form_submit_button("Entrar", type="primary")
+    _, meio, _ = st.columns([1, 1.1, 1])
+    with meio:
+        st.write("")
+        st.image(LOGO, use_container_width=True)
+        st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Área do vendedor · discador e carteira</p>",
+                    unsafe_allow_html=True)
+        with st.form("entrar"):
+            login = st.text_input("Login")
+            senha = st.text_input("Senha", type="password")
+            ok = st.form_submit_button("Entrar", type="primary", use_container_width=True)
     if ok:
         u = V.entrar(login, senha)
         if u:
