@@ -97,6 +97,12 @@ def telefones_extras(conn, cnpj: str | None = None) -> dict[str, list[dict]]:
     return out
 
 
+def registrar_resumo_ia(lead_id: int, cnpj: str | None, texto: str) -> None:
+    """O resumo da ligacao feito pela IA entra no historico do lead (funil New Names)."""
+    with engine().begin() as conn:
+        _registrar(conn, lead_id, cnpj, "nota", "IA · resumo da ligação", texto)
+
+
 def adicionar_telefone(cnpj: str, telefone: str, rotulo: str, quem: str, lead_id: int | None = None) -> dict:
     """Inclui um telefone novo na empresa; ele vira botao de ligar pela 3C nas fichas."""
     d = normalizar(telefone)

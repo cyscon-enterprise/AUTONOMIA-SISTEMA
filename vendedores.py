@@ -537,6 +537,12 @@ def agendar(vend: dict, cnpj: str, quando: dt.datetime | None) -> dict:
     return {"ok": True, "mensagem": "Retorno agendado." if quando else "Retorno desmarcado."}
 
 
+def registrar_resumo_ia(cnpj: str, texto: str) -> None:
+    """O resumo da ligacao feito pela IA entra no historico da empresa (carteira)."""
+    with dados.engine().begin() as conn:
+        _historico(conn, cnpj, "nota", "IA · resumo da ligação", texto)
+
+
 def registrar(vend: dict, cnpj: str, tipo: str, texto: str) -> dict:
     if not _pode(vend, cnpj):
         return {"erro": "Esse cliente não está na sua carteira."}

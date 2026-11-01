@@ -134,6 +134,9 @@ def item_ligacao(g: dict) -> None:
         elif st.button("▶ ouvir gravação", key=chave + "b"):
             ss[chave] = True
             st.rerun()
+        telas_vendedor.bloco_ia(cid, g.get("empresa") or "",
+                                f"Resumo da ligação de {br(g['pedido_em'])} para {dados.formatar(g['telefone'])}:",
+                                lambda t: dados.registrar_resumo_ia(g["lead_id"], g.get("cnpj"), t))
 
 
 def ver_ficha(lead_id: int) -> None:

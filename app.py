@@ -19,6 +19,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 import dados
+import ia_ligacoes
 import tela_new_names
 import telas_vendedor
 import tresc3c as tresc
@@ -47,11 +48,13 @@ def _segredo(nome: str, *alternativas: str) -> str:
 
 dados.configurar(_segredo("DATABASE_URL", "CYSCON_DATABASE_URL"))
 tresc.configurar(_segredo("TRESC_TOKEN", "CYSCON_3C_TOKEN"))
+ia_ligacoes.configurar(_segredo("ANTHROPIC_API_KEY"))
 
 
 @st.cache_resource
 def _preparar() -> bool:
     V.preparar()
+    ia_ligacoes.preparar()
     return True
 
 

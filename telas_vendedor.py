@@ -6,6 +6,7 @@ import datetime as dt
 import streamlit as st
 
 import dados
+import ia_ligacoes
 import tresc3c as tresc
 import vendedores as V
 
@@ -51,6 +52,28 @@ def incluir_telefone(cnpj: str, lead_id: int | None = None) -> None:
             if st.form_submit_button("Salvar telefone", type="primary", use_container_width=True):
                 avisar(dados.adicionar_telefone(cnpj, tel, rot, ss.get("quem") or eu()["nome"], lead_id))
                 st.rerun()
+
+
+def bloco_ia(chamada_3c: str, contexto: str, titulo: str, salvar_no_historico) -> None:
+    """Debaixo de uma ligacao gravada: o resumo da IA, ou o botao que ouve, transcreve e resume."""
+    feito = ia_ligacoes.resultado(chamada_3c)
+    if feito:
+        with st.expander("🧠 Resumo da ligação (IA)", expanded=False):
+            st.text(feito["resumo"] or "")
+            if feito.get("transcricao"):
+                st.caption("Transcrição automática")
+                st.write(feito["transcricao"])
+        return
+    if st.button("🧠 Transcrever e resumir", key=f"ia{chamada_3c}"):
+        try:
+            with st.spinner("Ouvindo a gravação e transcrevendo (pode levar 1 a 2 minutos)…"):
+                r = ia_ligacoes.processar(chamada_3c, contexto, ss.get("quem") or eu()["nome"])
+            if r["novo"]:
+                salvar_no_historico(f"{titulo}\n{r['resumo']}")
+            ss.msg = ("ok", "Resumo pronto e incluído no histórico.")
+        except ia_ligacoes.ErroIA as e:
+            ss.msg = ("erro", f"IA: {e}")
+        st.rerun()
 
 
 def br(v) -> str:
@@ -390,6 +413,9 @@ def ficha_cliente(cnpj: str) -> None:
                         elif st.button("▶ ouvir gravação", key=chave + "b"):
                             ss[chave] = True
                             st.rerun()
+                        bloco_ia(x["chamada_3c"], f"{e.get('nome_fantasia') or e.get('nome')} ({e.get('cidade') or ''})",
+                                 f"Resumo da ligação de {br(x['quando'])} para {dados.formatar(x.get('telefone'))}:",
+                                 lambda t, c=cnpj: V.registrar_resumo_ia(c, t))
                 else:
                     st.markdown(f"**{br(x['quando'])}**{(' · ' + x['quem']) if x.get('quem') else ''} · "
                                 f"{TIPOS.get(x.get('tipo'), x.get('tipo') or '')}")
