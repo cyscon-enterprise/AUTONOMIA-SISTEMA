@@ -166,7 +166,7 @@ def ver_ficha(lead_id: int) -> None:
                     unsafe_allow_html=True)
         st.markdown("#### Dados do lead")             # sempre aberto, logo abaixo do insight (pedido do usuario)
         with st.container(border=True):
-            campos = [("razao_social", "Razão social"), ("cnpj", "CNPJ"), ("cidade", "Cidade"), ("estado", "UF"),
+            campos = [("razao_social", "Razão social"), ("nome_fantasia", "Nome fantasia"), ("cnpj", "CNPJ"), ("cidade", "Cidade"), ("estado", "UF"),
                       ("status_crmtotvs", "Status no CRM TOTVS"), ("codigo_crmtotvs", "Código CRM"),
                       ("entidade", "Entidade"), ("base", "Base"), ("segmento", "Segmento"), ("mrr", "MRR"),
                       ("faturamento_totvs", "Faturamento TOTVS"), ("porte_da_empresa", "Porte"),

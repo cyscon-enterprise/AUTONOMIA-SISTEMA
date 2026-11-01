@@ -479,7 +479,7 @@ def ficha_cliente(cnpj: str) -> None:
     with esq:
         st.markdown("#### Dados da empresa")          # sempre aberto, antes do historico (como no funil New Names)
         with st.container(border=True):
-            campos = [("cnpj", "CNPJ"), ("aba", "Aba"), ("entidade", "Entidade"), ("segmento", "Segmento"),
+            campos = [("nome", "Razão social"), ("nome_fantasia", "Nome fantasia"), ("cnpj", "CNPJ"), ("aba", "Aba"), ("entidade", "Entidade"), ("segmento", "Segmento"),
                       ("base", "Base"), ("mrr", "MRR"), ("produto", "ERP"), ("porte_da_empresa", "Porte"),
                       ("cnae_descricao", "Atividade"), ("quadro_de_funcionarios", "Funcionários"),
                       ("endereco", "Endereço"), ("bairro", "Bairro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
