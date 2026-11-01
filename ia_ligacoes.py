@@ -60,6 +60,20 @@ def configurar(chave_anthropic: str) -> None:
     _CLIENTE.pop("c", None)
 
 
+def salvar_chave(chave: str) -> dict:
+    """Chave colada pelo admin no portal: vale ja no servidor e, rodando no Windows, fica guardada
+    como variavel do usuario (ANTHROPIC_API_KEY) para os proximos reinicios. Nunca e exibida."""
+    chave = (chave or "").strip()
+    if not chave.startswith("sk-ant-"):
+        return {"erro": "Isso não parece uma chave da Anthropic (ela começa com sk-ant-)."}
+    configurar(chave)
+    if os.name == "nt":
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as k:
+            winreg.SetValueEx(k, "ANTHROPIC_API_KEY", 0, winreg.REG_SZ, chave)
+    return {"ok": True, "mensagem": "Chave salva. Já pode usar o 🧠 Transcrever e resumir."}
+
+
 def tem_chave() -> bool:
     return bool(_CLIENTE.get("chave") or os.environ.get("ANTHROPIC_API_KEY"))
 

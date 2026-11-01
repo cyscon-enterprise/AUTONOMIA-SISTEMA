@@ -565,7 +565,18 @@ def pagina_visao_geral() -> None:
 def pagina_gestao() -> None:
     mostrar_msg()
     faixa("⚙", "Gestão", "Vendedores e turnos do discador")
-    a_vend, a_turnos = st.tabs(["Vendedores", "Turnos do discador"])
+    a_vend, a_turnos, a_ia = st.tabs(["Vendedores", "Turnos do discador", "IA (resumo das ligações)"])
+    with a_ia:
+        if ia_ligacoes.tem_chave():
+            st.success("Chave da Anthropic configurada: o botão 🧠 Transcrever e resumir já funciona.")
+        else:
+            st.warning("Falta a chave da Anthropic. Sem ela a transcrição funciona, mas o resumo não.")
+        with st.form("chave_ia", clear_on_submit=True):
+            chave = st.text_input("Cole aqui a chave da Anthropic (começa com sk-ant-)", type="password")
+            if st.form_submit_button("Salvar chave", type="primary"):
+                avisar(ia_ligacoes.salvar_chave(chave))
+                st.rerun()
+        st.caption("No site publicado, a chave fica nos Secrets do Streamlit (ANTHROPIC_API_KEY).")
     with a_vend:
         for v in V.lista():
             with st.container(border=True):
