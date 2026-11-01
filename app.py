@@ -1,4 +1,4 @@
-"""CRM Cyscon online (Streamlit + Supabase): login por vendedor, discador e carteira.
+"""AutonoVendas (CRM online da Cyscon) (Streamlit + Supabase): login por vendedor, discador e carteira.
 
 Cada vendedor entra com login e senha proprios (`crm_vendedores`). O vendedor ve o Discador e a
 carteira DELE; o administrador ve tudo, mais o funil New Names (secao Motor de Vendas) e a Gestao.
@@ -28,7 +28,7 @@ PASTA = os.path.dirname(os.path.abspath(__file__))
 LOGO = os.path.join(PASTA, "static", "logo.png")          # logo e icone feitos no Canva (31/10/2026)
 ICONE = os.path.join(PASTA, "static", "icone.png")
 
-st.set_page_config(page_title="CRM Cyscon", page_icon=ICONE, layout="wide")
+st.set_page_config(page_title="AutonoVendas", page_icon=ICONE, layout="wide")
 st.logo(LOGO, size="large", icon_image=ICONE)
 
 
@@ -100,7 +100,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-le
 
 def primeiro_acesso() -> None:
     """Ainda nao ha nenhum usuario: quem souber a APP_SENHA cria o administrador."""
-    st.title("CRM Cyscon · primeiro acesso")
+    st.title("AutonoVendas · primeiro acesso")
     st.write("Ainda não há usuários. Crie o administrador.")
     mestra = _segredo("APP_SENHA")
     if not mestra and os.environ.get("CRM_LOCAL") != "1":
@@ -160,17 +160,20 @@ with st.sidebar:
         components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=360, scrolling=True)
         st.divider()
     st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}")
-    if st.button("Sair do CRM"):
+    if st.button("Sair"):
         tresc.sair(ss.get("sessao3c"))
         for k in list(ss.keys()):
             del ss[k]
         st.rerun()
 
-paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=True),
-           st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira")]
-if ss.usuario.get("admin"):
-    paginas += [st.Page(telas_vendedor.pagina_carteiras_todos, title="Carteiras (todos)", icon="👥",
-                        url_path="carteiras"),
-                st.Page(tela_new_names.pagina, title="New Names (Motor de Vendas)", icon="🗂", url_path="new-names"),
-                st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
+# vendedor: discador, carteira e funil. Administrador: a visao geral do CRM (abre nela) + tudo do vendedor
+admin = bool(ss.usuario.get("admin"))
+paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=not admin),
+           st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira"),
+           st.Page(tela_new_names.pagina, title="Funil New Names", icon="🗂", url_path="new-names")]
+if admin:
+    paginas = [st.Page(telas_vendedor.pagina_visao_geral, title="Visão geral", icon="📊", url_path="visao-geral",
+                       default=True)] + paginas + [
+        st.Page(telas_vendedor.pagina_carteiras_todos, title="Carteiras (todos)", icon="👥", url_path="carteiras"),
+        st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
 st.navigation(paginas, position="top").run()             # menu no topo: a barra fica so para o telefone

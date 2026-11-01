@@ -465,6 +465,75 @@ def ficha_cliente(cnpj: str) -> None:
                 st.markdown(f"**{r}:** {e[k]}")
 
 
+# ---------------------------------------------------------------- Visao geral (admin)
+
+def pagina_visao_geral() -> None:
+    """Painel do administrador: funil, produtividade por vendedor e discador, numa tela."""
+    import altair as alt
+    import pandas as pd
+
+    mostrar_msg()
+    dias = st.segmented_control("Período", [1, 7, 30], default=7, format_func=lambda d: "hoje" if d == 1 else f"{d} dias",
+                                label_visibility="collapsed") or 7
+    g = V.visao_geral(dias)
+    q = dados.quadro()
+    faixa("📊", "Visão geral · AutonoVendas", f"Últimos {dias} dia(s) · atualizado {dados.agora():%d/%m %H:%M}")
+
+    vend = [v for v in g["vendedores"] if v["ativo"] and not v["admin"]]
+    t = g["turno"]
+    k = st.columns(5)
+    kpi(k[0], "Discador agora", t["nome"] if t else "livre")
+    kpi(k[1], "Chamadas hoje", g["chamadas_hoje"])
+    kpi(k[2], f"Chamadas ({dias}d)", sum(v["chamadas"] for v in g["vendedores"]))
+    kpi(k[3], f"Novos na carteira ({dias}d)", sum(v["novos"] for v in g["vendedores"]))
+    kpi(k[4], "Vendedores ativos", len(vend))
+    st.write("")
+
+    esq, dir_ = st.columns([1, 1], gap="large")
+    with esq:
+        st.markdown("#### Funil New Names")
+        cont = {e["nome"]: 0 for e in q["etapas"]}
+        for c in q["cards"]:
+            cont[c["etapa"]] = cont.get(c["etapa"], 0) + 1
+        df = pd.DataFrame([{"etapa": e["nome"], "leads": cont[e["nome"]], "cor": e["cor"], "ordem": i}
+                           for i, e in enumerate(q["etapas"])])
+        st.altair_chart(
+            alt.Chart(df).mark_bar(cornerRadiusEnd=4).encode(
+                y=alt.Y("etapa:N", sort=alt.SortField("ordem"), title=None),
+                x=alt.X("leads:Q", title="leads"),
+                color=alt.Color("cor:N", scale=None), tooltip=["etapa", "leads"])
+            + alt.Chart(df).mark_text(align="left", dx=4, color="#1b2a41").encode(
+                y=alt.Y("etapa:N", sort=alt.SortField("ordem")), x="leads:Q", text="leads:Q"),
+            use_container_width=True)
+        atr = sum(1 for c in q["cards"] if c["atrasado"])
+        st.caption(f"{len(q['cards'])} leads · {atr} retorno(s) atrasado(s)")
+    with dir_:
+        st.markdown("#### Chamadas do discador por dia")
+        if g["por_dia"]:
+            df = pd.DataFrame(g["por_dia"]).melt("dia", var_name="tipo", value_name="n")
+            df["tipo"] = df["tipo"].map({"chamadas": "chamadas", "carteira": "entraram na carteira"})
+            st.altair_chart(alt.Chart(df).mark_bar().encode(
+                x=alt.X("dia:T", title=None, axis=alt.Axis(format="%d/%m")), xOffset="tipo:N",
+                y=alt.Y("n:Q", title=None), color=alt.Color("tipo:N", title=None,
+                                                             scale=alt.Scale(range=["#1565c0", "#22b5d8"])),
+                tooltip=["dia:T", "tipo", "n"]), use_container_width=True)
+        else:
+            st.info("Nenhuma chamada do discador no período.")
+        m = g["manuais"]
+        st.caption(f"Ligações manuais pelas fichas: {m['total']} · atendidas: {m['atendidas']}")
+
+    st.markdown("#### Vendedores")
+    linhas = [{"Vendedor": v["nome"], "Perfil": "admin" if v["admin"] else "vendedor",
+               "Situação": "ativo" if v["ativo"] else "desativado",
+               "Horas no discador": round(float(v["horas"] or 0), 1), "Chamadas": v["chamadas"],
+               "Novos na carteira": v["novos"], "Ligações manuais": v["manuais"],
+               "Carteira": v["carteira"], "Retornos atrasados": v["atrasados"],
+               "Último acesso": br(v["ultimo_acesso"]) or "nunca"} for v in g["vendedores"]]
+    st.dataframe(linhas, hide_index=True, use_container_width=True)
+    st.caption("Horas = tempo de turno aberto no discador. Os números são para acompanhar o time, "
+               "não para cobrar meta (o vendedor é autônomo: ver o contrato).")
+
+
 # ---------------------------------------------------------------- Gestao (admin)
 
 def pagina_gestao() -> None:
@@ -474,7 +543,13 @@ def pagina_gestao() -> None:
     with a_vend:
         for v in V.lista():
             with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 2, 2])
+                c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+                if c4.button("Tornar vendedor" if v["admin"] else "Tornar administrador", key=f"adm{v['id']}"):
+                    r = V.definir_admin(v["id"], not v["admin"])
+                    avisar(r)
+                    if v["id"] == eu()["id"] and not r.get("erro"):
+                        ss.usuario["admin"] = not v["admin"]        # o menu muda ja na proxima tela
+                    st.rerun()
                 c1.markdown(f"**{v['nome']}** · `{v['login']}`{' · admin' if v['admin'] else ''}"
                             f"{'' if v['ativo'] else ' · _desativado_'}  \n"
                             f"{v['clientes']} cliente(s) · último acesso {br(v['ultimo_acesso']) or 'nunca'}")

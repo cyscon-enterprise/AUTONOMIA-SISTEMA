@@ -182,6 +182,48 @@ def ativar(vendedor_id: int, ativo: bool) -> dict:
     return {"ok": True, "mensagem": "Vendedor reativado." if ativo else "Vendedor desativado (a carteira fica)."}
 
 
+def definir_admin(vendedor_id: int, admin: bool) -> dict:
+    """Muda o perfil (vendedor <-> administrador). Nunca deixa o CRM sem nenhum administrador ativo."""
+    with dados.engine().begin() as conn:
+        if not admin:
+            outros = conn.execute(sa.text("SELECT count(*) FROM crm_vendedores WHERE admin AND ativo AND id <> :i"),
+                                  {"i": vendedor_id}).scalar()
+            if not outros:
+                return {"erro": "Crie outro administrador antes: o CRM precisa de pelo menos um."}
+        conn.execute(sa.text("UPDATE crm_vendedores SET admin = :a WHERE id = :i"), {"a": admin, "i": vendedor_id})
+    return {"ok": True, "mensagem": "Agora é administrador." if admin else "Agora é vendedor."}
+
+
+def visao_geral(dias: int = 7) -> dict:
+    """Numeros do CRM inteiro para a pagina do administrador."""
+    agora = dados.agora()
+    desde = agora - dt.timedelta(days=dias)
+    hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    with dados.engine().connect() as conn:
+        vend = _q(conn, """
+            SELECT v.id, v.nome, v.login, v.admin, v.ativo, v.ultimo_acesso,
+              (SELECT count(*) FROM crm_carteira c WHERE c.vendedor_id = v.id) AS carteira,
+              (SELECT count(*) FROM crm_carteira c JOIN empresas e ON e.cnpj = c.cnpj
+                WHERE c.vendedor_id = v.id AND e.proximo_contato IS NOT NULL AND e.proximo_contato <= :agora_txt) AS atrasados,
+              (SELECT count(*) FROM crm_discador_chamadas d WHERE d.vendedor_id = v.id AND d.quando >= :desde) AS chamadas,
+              (SELECT count(*) FROM crm_discador_chamadas d WHERE d.vendedor_id = v.id AND d.quando >= :desde
+                AND d.entrou_carteira) AS novos,
+              (SELECT count(*) FROM crm_mv_ligacoes l WHERE l.quem = v.nome AND l.pedido_em >= :desde) AS manuais,
+              (SELECT coalesce(sum(extract(epoch FROM coalesce(t.fim, :agora) - t.inicio)), 0) / 3600.0
+                 FROM crm_discador_turnos t WHERE t.vendedor_id = v.id AND t.inicio >= :desde) AS horas
+            FROM crm_vendedores v ORDER BY v.ativo DESC, v.nome""",
+                  desde=desde, agora=agora, agora_txt=agora.isoformat(sep=" ", timespec="minutes"))
+        por_dia = _q(conn, """
+            SELECT date(quando) AS dia, count(*) AS chamadas, count(*) FILTER (WHERE entrou_carteira) AS carteira
+            FROM crm_discador_chamadas WHERE quando >= :desde GROUP BY 1 ORDER BY 1""", desde=desde)
+        manuais = _q(conn, """
+            SELECT count(*) AS total, count(*) FILTER (WHERE duracao IS NOT NULL AND duracao <> '00:00:00') AS atendidas
+            FROM crm_mv_ligacoes WHERE pedido_em >= :desde""", desde=desde)[0]
+        hoje_n = _q(conn, "SELECT count(*) AS n FROM crm_discador_chamadas WHERE quando >= :h", h=hoje)[0]["n"]
+    return {"vendedores": vend, "por_dia": por_dia, "manuais": manuais, "chamadas_hoje": hoje_n,
+            "turno": turno_aberto(), "dias": dias}
+
+
 def lista() -> list[dict]:
     with dados.engine().connect() as conn:
         return _q(conn, "SELECT v.id, v.nome, v.login, v.admin, v.ativo, v.ultimo_acesso, "
