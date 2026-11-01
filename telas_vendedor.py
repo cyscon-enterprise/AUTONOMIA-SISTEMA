@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
+from urllib.parse import quote
 
 import streamlit as st
 
@@ -41,6 +43,57 @@ def faixa(icone: str, titulo: str, sub: str = "") -> None:
 
 def kpi(col, rotulo: str, valor) -> None:
     col.markdown(f"<div class='kpi'><small>{rotulo}</small><div>{valor}</div></div>", unsafe_allow_html=True)
+
+
+COLS_EMAIL = [("email", "geral"), ("email_2", "geral 2"), ("e_mail_site", "site"), ("e_mail_ti", "TI"),
+              ("e_mail_rh", "RH"), ("e_mail_financeiro", "Financeiro"), ("e_mail_fiscal", "Fiscal"),
+              ("e_mail_contabil", "Contábil")]
+
+
+def emails_de(reg: dict) -> list[tuple[str, str]]:
+    """(e-mail, de onde veio) de uma empresa ou lead, sem repetir. Pega tambem e-mails escritos
+    no meio dos campos de contato (ex.: "Carlos - carlos@empresa.com.br")."""
+    vistos: dict[str, str] = {}
+    campos = COLS_EMAIL + [(k, k.replace("contato_", "").replace("_", " ")) for k in reg if k.startswith("contato")]
+    for col, rot in campos:
+        for e in re.findall(r"[\w.+-]+@[\w-]+\.[\w.-]+", str(reg.get(col) or "")):
+            vistos.setdefault(e.lower().rstrip("."), rot)
+    return list(vistos.items())
+
+
+def celular(tel: str) -> bool:
+    return len(tel) == 11 and tel[2] == "9"
+
+
+def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: list[dict], chave: str) -> None:
+    """Botoes de e-mail (abre o e-mail do vendedor ja preenchido) e WhatsApp (abre a conversa)."""
+    vendedor = (ss.get("quem") or "").split(" ")[0]
+    empresa = ss.get("empresa", {}).get("nome") or "Cyscon Consultoria"
+    c1, c2 = st.columns(2)
+    with c1:
+        if emails:
+            op = {f"{e} · {r}": e for e, r in emails}
+            alvo = op[st.selectbox("E-mail", list(op), key=f"em{chave}", label_visibility="collapsed")] \
+                if len(op) > 1 else emails[0][0]
+            assunto = f"{empresa} | {nome_empresa}"
+            corpo = (f"Olá, tudo bem?\n\nAqui é {vendedor}, da {empresa}, parceira TOTVS.\n\n"
+                     "Conforme conversamos, segue o contato.\n\nFico à disposição.\n\n" + (vendedor or ""))
+            st.link_button("✉ Enviar e-mail", f"mailto:{alvo}?subject={quote(assunto)}&body={quote(corpo)}",
+                           use_container_width=True)
+        else:
+            st.button("✉ Sem e-mail", disabled=True, use_container_width=True, key=f"sem_em{chave}")
+    with c2:
+        cels = [t for t in telefones if celular(t["tel"])]
+        if cels:
+            op = {f"{t['exibir']} · {', '.join(t['rotulos'])}": t["tel"] for t in cels}
+            tel = op[st.selectbox("WhatsApp", list(op), key=f"wa{chave}", label_visibility="collapsed")] \
+                if len(op) > 1 else cels[0]["tel"]
+            texto = f"Olá! Aqui é {vendedor}, da {empresa}, parceira TOTVS. Tudo bem?"
+            st.link_button("💬 Conversar no WhatsApp", f"https://wa.me/55{tel}?text={quote(texto)}",
+                           use_container_width=True)
+        else:
+            st.button("💬 Sem celular", disabled=True, use_container_width=True, key=f"sem_wa{chave}",
+                      help="WhatsApp precisa de um celular (11 dígitos começando com 9). Inclua um em ➕ Incluir telefone.")
 
 
 def incluir_telefone(cnpj: str, lead_id: int | None = None) -> None:
@@ -428,11 +481,13 @@ def ficha_cliente(cnpj: str) -> None:
                 st.markdown("**Na planilha**")
                 st.text(e["historico"])
     with dir_:
+        st.markdown("#### Contato")
+        botoes_contato(e.get("nome_fantasia") or e.get("nome") or "", emails_de(e), f["telefones"], cnpj)
         st.markdown("#### Ligar pela 3C")
         controle_ligacao_manual()
         if not f["telefones"]:
             st.caption("Sem telefone.")
-        ramal =(ss.get("sessao3c") or {}).get("ramal") or "1003"
+        ramal = (ss.get("sessao3c") or {}).get("ramal") or "1003"
         for t in f["telefones"]:
             if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{cnpj}{t['tel']}",
                          use_container_width=True):

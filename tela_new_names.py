@@ -194,6 +194,9 @@ def ver_ficha(lead_id: int) -> None:
         aberta = dados.ligacao_aberta(lead_id)
         if aberta:
             bloco_ligacao(aberta)
+        st.markdown("#### Contato")
+        telas_vendedor.botoes_contato(L.get("nome_fantasia") or L.get("razao_social") or "",
+                                      telas_vendedor.emails_de(L), f["telefones"], f"nn{lead_id}")
         st.markdown("#### Ligar pela 3C")
         telas_vendedor.controle_ligacao_manual()
         if not f["telefones"]:
