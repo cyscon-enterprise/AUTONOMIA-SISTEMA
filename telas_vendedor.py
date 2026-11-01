@@ -452,7 +452,8 @@ def ficha_cliente(cnpj: str) -> None:
                                       f["dono"] and f"carteira de {f['dono']['nome']}"] if x))
     esq, dir_ = st.columns([3, 2], gap="large")
     with esq:
-        with st.expander("Dados da empresa"):          # no alto, antes do historico (como no funil New Names)
+        st.markdown("#### Dados da empresa")          # sempre aberto, antes do historico (como no funil New Names)
+        with st.container(border=True):
             campos = [("cnpj", "CNPJ"), ("aba", "Aba"), ("entidade", "Entidade"), ("segmento", "Segmento"),
                       ("base", "Base"), ("mrr", "MRR"), ("produto", "ERP"), ("porte_da_empresa", "Porte"),
                       ("cnae_descricao", "Atividade"), ("quadro_de_funcionarios", "Funcionários"),

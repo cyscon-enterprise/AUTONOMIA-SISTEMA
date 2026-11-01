@@ -164,7 +164,8 @@ def ver_ficha(lead_id: int) -> None:
         st.markdown(f'<div class="insight">{ins}</div>' if ins else
                     '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
                     unsafe_allow_html=True)
-        with st.expander("Dados do lead"):            # logo abaixo do insight (pedido do usuario, 01/11)
+        st.markdown("#### Dados do lead")             # sempre aberto, logo abaixo do insight (pedido do usuario)
+        with st.container(border=True):
             campos = [("razao_social", "Razão social"), ("cnpj", "CNPJ"), ("cidade", "Cidade"), ("estado", "UF"),
                       ("status_crmtotvs", "Status no CRM TOTVS"), ("codigo_crmtotvs", "Código CRM"),
                       ("entidade", "Entidade"), ("base", "Base"), ("segmento", "Segmento"), ("mrr", "MRR"),
