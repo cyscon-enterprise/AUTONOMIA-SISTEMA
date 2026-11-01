@@ -63,6 +63,8 @@ def form_conectar_3c(rotulo: str) -> None:
         ramal = c1.text_input("Ramal da 3C", value="1003")
         senha = c2.text_input("Senha da 3C", type="password")
         ok = st.form_submit_button(rotulo, type="primary")
+        if ss.get("erro3c"):                            # junto do botao: a faixa do topo passa despercebida
+            st.error(ss.pop("erro3c"))
     if ok:
         t = V.turno_aberto()
         if not (t and t["vendedor_id"] == eu()["id"]):
@@ -74,7 +76,9 @@ def form_conectar_3c(rotulo: str) -> None:
             ss.sessao3c = tresc.autenticar(ramal, senha)
             ss.msg = ("ok", "Conectado. Permita o microfone no telefone da barra lateral e espere ele ficar pronto.")
         except tresc.Erro3C as e:
-            ss.msg = ("erro", f"3C: {e}")
+            msg = str(e)
+            ss.erro3c = ("Ramal ou senha da 3C incorretos. Confira e tente de novo." if "incorretos" in msg
+                         else f"Não consegui conectar na 3C: {msg}")
         st.rerun()
 
 
