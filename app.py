@@ -208,7 +208,14 @@ def escolher_empresa() -> None:
                 st.write(e.get("descricao") or "")
                 if e.get("produto"):
                     st.caption(f"Produto: {e['produto']}")
-                st.markdown(f"**Comissão: {float(e['comissao_pct']):g}%** sobre as vendas")
+                # deixa claro, antes de comecar, que a unica remuneracao e a comissao (contrato sem vinculo)
+                st.markdown(
+                    f"<div style='background:#eef4ff;border-radius:8px;padding:10px 14px;margin:6px 0 10px'>"
+                    f"<div style='font-size:17px'><b>Comissão: {float(e['comissao_pct']):g}%</b> sobre as vendas</div>"
+                    f"<div style='font-size:17px'><b>Outros pagamentos: não</b></div>"
+                    f"<div style='color:#5b6b85;font-size:13px;margin-top:4px'>Sem salário, ajuda de custo ou valor "
+                    f"por hora: você recebe só a comissão das vendas que fizer.</div></div>",
+                    unsafe_allow_html=True)
                 if st.button(f"Trabalhar com a {e['nome']}", key=f"emp{e['id']}", type="primary",
                              use_container_width=True):
                     ss.empresa = {"id": e["id"], "nome": e["nome"]}
