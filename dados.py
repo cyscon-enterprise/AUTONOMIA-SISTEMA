@@ -338,11 +338,20 @@ def ligacao_aberta(lead_id: int) -> dict | None:
 
 
 def em_andamento(lig: dict) -> bool:
+    return chamada_ativa(lig) is not None
+
+
+def chamada_ativa(lig: dict) -> dict | None:
+    """A chamada deste telefone que esta acontecendo agora na 3C (tocando ou em conversa), ou None."""
     try:
         final = lig["telefone"][-8:]
-        return any(final in re.sub(r"\D", "", str(c)) for c in tresc.ativas())
+        return next((c for c in tresc.ativas() if final in re.sub(r"\D", "", str(c))), None)
     except tresc.Erro3C:
-        return False
+        return None
+
+
+def ligacao(lig_id: int) -> dict | None:
+    return _lig(lig_id)
 
 
 def desligar(lig_id: int, quem: str, sessao: dict | None) -> dict:
@@ -487,7 +496,7 @@ def sincronizar(lead_id: int | None = None) -> dict:
             "SELECT chamada_3c FROM crm_mv_ligacoes WHERE chamada_3c IS NOT NULL"))}
     for lig in fila:
         idade = momento - lig["pedido_em"]
-        if idade < dt.timedelta(minutes=1):
+        if idade < dt.timedelta(seconds=15):           # a 3C leva uns segundos para registrar a chamada
             continue
         try:
             ch = _achar(lig, usados - {str(lig.get("chamada_3c"))})

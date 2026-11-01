@@ -51,17 +51,40 @@ def ramal_atual() -> str:
 
 # ---------------------------------------------------------------- ficha do lead
 
+@st.fragment(run_every="4s")
+def status_ao_vivo(lig_id: int) -> None:
+    """O que esta acontecendo com a chamada, atualizado sozinho. Na 3C o cliente e discado primeiro e o
+    vendedor so entra na linha quando ele atende: sem este aviso, o vendedor fica no silencio sem saber."""
+    lig = dados.ligacao(lig_id)
+    if not lig:
+        return
+    viva = dados.chamada_ativa(lig) if lig["status"] != "finalizada" else None
+    if viva:
+        if str(viva.get("speaking_time") or "00:00:00") not in ("", "00:00:00") or "talk" in str(viva.get("_grupo")).lower():
+            st.success("🟢 Em conversa.")
+        else:
+            st.info(f"📳 Chamando {dados.formatar(lig['telefone'])}… Você entra na linha quando atenderem "
+                    "(não há som de chamando do seu lado).")
+        return
+    if lig["status"] != "finalizada":
+        dados.sincronizar(lig["lead_id"])
+        lig = dados.ligacao(lig_id) or lig
+    if lig.get("resultado") or lig["status"] == "finalizada":
+        conversa = lig.get("duracao") and lig["duracao"] != "00:00:00"
+        texto = f"Encerrada: {lig.get('resultado') or 'sem resultado'}" + (f" · conversa {lig['duracao']}" if conversa else "")
+        (st.success if conversa else st.warning)(("✅ " if conversa else "⚠️ ") + texto)
+    elif lig["status"] == "recusada":
+        st.error(f"❌ A 3C recusou: {lig.get('erro') or ''}")
+    else:
+        st.info("⏳ Pedido enviado à 3C, esperando a chamada começar…")
+
+
 def bloco_ligacao(lig: dict) -> None:
     """Ligacao recente sem baixa: estado, desligar e dar baixa pelas etapas do funil."""
     with st.container(border=True):
         st.markdown(f"**📞 Ligação para {dados.formatar(lig['telefone'])}** · pedida {br(lig['pedido_em'])} · "
                     f"ramal {lig.get('ramal') or ''}")
-        if lig["status"] == "finalizada":
-            st.caption(f"Encerrada. {lig.get('resultado') or ''} {('· conversa ' + lig['duracao']) if lig.get('duracao') else ''}")
-        elif dados.em_andamento(lig):
-            st.caption("Em ligação…")
-        else:
-            st.caption("Chamando: o ramal toca primeiro, atenda para discar. Se já terminou, dê a baixa abaixo.")
+        status_ao_vivo(lig["id"])
         c1, c2 = st.columns(2)
         if c1.button("🔄 Atualizar", key=f"att{lig['id']}", use_container_width=True):
             dados.sincronizar(lig["lead_id"])
