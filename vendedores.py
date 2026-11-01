@@ -75,6 +75,18 @@ DDL = [
         entrou_carteira BOOLEAN NOT NULL DEFAULT FALSE,
         lido_em TIMESTAMP NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS ix_disc_cham_cnpj ON crm_discador_chamadas (cnpj)",
+    """CREATE TABLE IF NOT EXISTS crm_empresas_parceiras (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(80) NOT NULL UNIQUE,
+        descricao TEXT,
+        produto VARCHAR(120),
+        comissao_pct NUMERIC(5,2) NOT NULL DEFAULT 10,
+        ativa BOOLEAN NOT NULL DEFAULT TRUE,
+        criado_em TIMESTAMP NOT NULL DEFAULT now())""",
+    """INSERT INTO crm_empresas_parceiras (nome, descricao, produto, comissao_pct)
+       VALUES ('Cyscon', 'Revenda TOTVS: ERP e sistemas de gestão para empresas de todos os portes.',
+               'ERP TOTVS (Protheus, Winthor, RM e outros)', 10)
+       ON CONFLICT (nome) DO NOTHING""",
     """CREATE TABLE IF NOT EXISTS crm_convites (
         token_hash CHAR(64) PRIMARY KEY,
         admin BOOLEAN NOT NULL DEFAULT FALSE,
@@ -187,6 +199,12 @@ def ativar(vendedor_id: int, ativo: bool) -> dict:
     with dados.engine().begin() as conn:
         conn.execute(sa.text("UPDATE crm_vendedores SET ativo = :a WHERE id = :i"), {"a": ativo, "i": vendedor_id})
     return {"ok": True, "mensagem": "Vendedor reativado." if ativo else "Vendedor desativado (a carteira fica)."}
+
+
+def empresas_parceiras() -> list[dict]:
+    """As empresas para quem o vendedor pode trabalhar (a escolha logo depois do login)."""
+    with dados.engine().connect() as conn:
+        return _q(conn, "SELECT * FROM crm_empresas_parceiras WHERE ativa ORDER BY nome")
 
 
 def criar_convite(admin: bool = False, horas: int = 48) -> str:

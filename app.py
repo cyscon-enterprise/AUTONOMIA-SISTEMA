@@ -189,13 +189,47 @@ if not ss.usuario:
 
 ss.quem = ss.usuario["nome"]                       # assina tudo que se registra no CRM
 
+
+def escolher_empresa() -> None:
+    """Logo depois do login: o vendedor escolhe para qual empresa vai trabalhar nesta sessao."""
+    empresas = V.empresas_parceiras()
+    st.write("")
+    _, meio, _ = st.columns([1, 2.2, 1])
+    with meio:
+        st.image(LOGO, width=340)
+        st.markdown(f"### Olá, {ss.usuario['nome'].split()[0]}! Para qual empresa você vai vender hoje?")
+        st.caption("Cada empresa tem a sua base de clientes, o seu produto e a sua comissão.")
+        if not empresas:
+            st.info("Nenhuma empresa disponível no momento.")
+        cols = st.columns(2)
+        for i, e in enumerate(empresas):
+            with cols[i % 2].container(border=True):
+                st.markdown(f"#### {e['nome']}")
+                st.write(e.get("descricao") or "")
+                if e.get("produto"):
+                    st.caption(f"Produto: {e['produto']}")
+                st.markdown(f"**Comissão: {float(e['comissao_pct']):g}%** sobre as vendas")
+                if st.button(f"Trabalhar com a {e['nome']}", key=f"emp{e['id']}", type="primary",
+                             use_container_width=True):
+                    ss.empresa = {"id": e["id"], "nome": e["nome"]}
+                    st.rerun()
+    st.stop()
+
+
+if not ss.get("empresa"):
+    escolher_empresa()
+
 with st.sidebar:
     if ss.get("sessao3c"):
         # o telefone web (WebRTC) da 3C: primeiro da barra (a vista) e fora das paginas, para nao cair
         st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")
         components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=360, scrolling=True)
         st.divider()
-    st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}")
+    st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}  \n"
+                f"Empresa: **{ss.empresa['nome']}**")
+    if len(V.empresas_parceiras()) > 1 and st.button("Trocar de empresa"):
+        ss.pop("empresa", None)
+        st.rerun()
     if st.button("Sair"):
         tresc.sair(ss.get("sessao3c"))
         for k in list(ss.keys()):
