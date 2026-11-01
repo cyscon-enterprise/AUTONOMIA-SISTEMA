@@ -154,6 +154,35 @@ def pagina_discador() -> None:
                     f"{x['carteira']} entraram na carteira")
 
 
+def entrar_modo(s3: dict, campanha, manual: bool) -> None:
+    try:
+        tresc.entrar_campanha(s3["token"], campanha, manual=manual)
+        s3["modo"] = "manual" if manual else "discador"
+        st.success("Pedido enviado. A 3C liga para o seu telefone web para conectar: atenda na barra lateral."
+                   + (" Depois é só clicar nos ☎ das fichas." if manual else " Em seguida o discador começa."))
+    except tresc.Erro3C as e:
+        st.error(f"3C: {e}")
+
+
+def controle_ligacao_manual() -> None:
+    """Na ficha: se o ramal esta conectado no portal mas fora da campanha, oferece o modo manual
+    (sem ele a 3C recusa o Click2Call com "ramal nao esta logado")."""
+    s3 = ss.get("sessao3c")
+    if not s3 or not s3.get("token"):
+        st.caption("Conecte seu ramal na página **Discador** para ligar daqui.")
+        return
+    status = tresc.status_ramal(s3["ramal"])
+    if status == 0:
+        lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
+        if st.button("☎ Entrar em modo manual para ligar", type="primary", use_container_width=True):
+            entrar_modo(s3, lista[0]["id"], manual=True)
+        st.caption("Seu ramal está fora da campanha. Entre em modo manual, atenda a conexão no telefone da barra "
+                   "e depois clique no número.")
+    elif status == 1 and s3.get("modo") != "manual":
+        st.caption("Você está no discador automático: ele pode passar uma ligação a qualquer momento. "
+                   "Para ligar só pelos botões, saia da campanha no Discador e entre em \"Só ligações manuais\".")
+
+
 @st.fragment(run_every="10s")
 def painel_ramal(s3: dict) -> None:
     """Estado do ramal na 3C e a entrada na campanha (depois que o telefone web registrou)."""
@@ -167,14 +196,15 @@ def painel_ramal(s3: dict) -> None:
             lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
             camps = {c["nome"]: c["id"] for c in lista}
             nome = st.selectbox("Campanha", list(camps)) if len(camps) > 1 else next(iter(camps))
-            st.caption("Antes: no telefone da barra lateral, permita o microfone e espere ele ficar pronto (uns 10 s). "
-                       "Depois clique abaixo: o discador começa a ligar e as chamadas tocam no telefone da barra.")
-            if st.button(f"📞 Entrar na campanha {nome} e começar a discar", type="primary"):
-                try:
-                    tresc.entrar_campanha(s3["token"], camps[nome])
-                    st.success("Pedido enviado. A 3C liga para o seu telefone web para conectar: atenda na barra lateral.")
-                except tresc.Erro3C as e:
-                    st.error(f"3C: {e}")
+            st.caption("Antes: no telefone da barra lateral, permita o microfone e espere aparecer \"Ramal registrado\". "
+                       "Depois escolha como quer trabalhar:")
+            c1, c2 = st.columns(2)
+            if c1.button("📞 Discador automático", type="primary", use_container_width=True,
+                         help="O discador liga sozinho para a base e passa para você quem atender."):
+                entrar_modo(s3, camps[nome], manual=False)
+            if c2.button("☎ Só ligações manuais", use_container_width=True,
+                         help="O discador fica parado; você liga pelos botões ☎ das fichas."):
+                entrar_modo(s3, camps[nome], manual=True)
         c1, c2 = st.columns(2)
         if status and c1.button("Sair da campanha (pausa longa)"):
             tresc.sair(s3)
@@ -373,9 +403,10 @@ def ficha_cliente(cnpj: str) -> None:
                 st.text(e["historico"])
     with dir_:
         st.markdown("#### Ligar pela 3C")
+        controle_ligacao_manual()
         if not f["telefones"]:
             st.caption("Sem telefone.")
-        ramal = (ss.get("sessao3c") or {}).get("ramal") or "1003"
+        ramal =(ss.get("sessao3c") or {}).get("ramal") or "1003"
         for t in f["telefones"]:
             if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{cnpj}{t['tel']}",
                          use_container_width=True):

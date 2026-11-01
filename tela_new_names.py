@@ -169,6 +169,7 @@ def ver_ficha(lead_id: int) -> None:
         if aberta:
             bloco_ligacao(aberta)
         st.markdown("#### Ligar pela 3C")
+        telas_vendedor.controle_ligacao_manual()
         if not f["telefones"]:
             st.caption("Sem telefone.")
         for t in f["telefones"]:

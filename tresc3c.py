@@ -137,11 +137,13 @@ def webphone_url(token_agente: str) -> str:
     return f"https://{DOMINIO}.3c.plus/extension?api_token={token_agente}"
 
 
-def entrar_campanha(token_agente: str, campanha: int | str) -> dict:
-    """Poe o agente na campanha em modo discador (sem `mode`: o discador manda as chamadas sozinho).
-    So funciona com o ramal web ja registrado."""
-    return _agente_req("POST", f"https://{DOMINIO}.3c.plus/api/v1/agent/login", token_agente,
-                       dados={"campaign": int(campanha)})
+def entrar_campanha(token_agente: str, campanha: int | str, manual: bool = False) -> dict:
+    """Poe o agente na campanha. Sem `mode`, o discador manda as chamadas sozinho; com `mode=manual` o
+    discador fica parado e o vendedor liga quando quer (Click2Call). So funciona com o ramal web registrado."""
+    dados = {"campaign": int(campanha)}
+    if manual:
+        dados["mode"] = "manual"
+    return _agente_req("POST", f"https://{DOMINIO}.3c.plus/api/v1/agent/login", token_agente, dados=dados)
 
 
 STATUS_AGENTE = {0: "desconectado", 1: "livre, esperando chamada", 2: "em ligação", 3: "pós-atendimento (qualificar)",
