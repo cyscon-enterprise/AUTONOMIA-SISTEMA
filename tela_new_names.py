@@ -10,6 +10,7 @@ import datetime as dt
 import streamlit as st
 
 import dados
+import telas_vendedor
 import tresc3c as tresc
 
 ss = st.session_state
@@ -220,16 +221,29 @@ def ver_ficha(lead_id: int) -> None:
 
 # ---------------------------------------------------------------- funil e agenda
 
+ALTURA_CARTAO = 250                         # todos iguais: a grade fica alinhada
+
+
+def grade(itens: list, desenhar, por_linha: int = 3) -> None:
+    """Cartoes em linhas de `por_linha`: cada linha abre colunas novas, entao as linhas alinham."""
+    for i in range(0, len(itens), por_linha):
+        cols = st.columns(por_linha)
+        for col, item in zip(cols, itens[i:i + por_linha]):
+            with col:
+                desenhar(item)
+
+
 def cartao(c: dict, onde: str = "f") -> None:
-    with st.container(border=True):
-        st.markdown(f"**{c['nome'][:60]}**  \n<span style='color:#666;font-size:13px'>{c['cidade']}"
-                    f"{('/' + c['estado']) if c['estado'] else ''}{(' · ' + c['status_crm']) if c['status_crm'] else ''}"
-                    f"</span><br>{selo(c['grupo'])}", unsafe_allow_html=True)
-        if c["proximo_contato"]:
-            st.markdown(f"<span class='{'late' if c['atrasado'] else ''}'>"
-                        f"{'atrasado' if c['atrasado'] else 'retorno'}: {br(c['proximo_contato'])}</span>",
-                        unsafe_allow_html=True)
-        st.caption(" · ".join(t["exibir"] for t in c["telefones"][:3]) or "sem telefone")
+    with st.container(border=True, height=ALTURA_CARTAO):
+        st.markdown(f"<div class='cart-nome' title=\"{c['nome']}\">{c['nome']}</div>"
+                    f"<div class='cart-linha'>{c['cidade']}{('/' + c['estado']) if c['estado'] else ''}"
+                    f"{(' · ' + c['status_crm']) if c['status_crm'] else ''}</div>{selo(c['grupo'])}",
+                    unsafe_allow_html=True)
+        retorno = (f"<span class='{'late' if c['atrasado'] else ''}'>{'atrasado' if c['atrasado'] else 'retorno'}: "
+                   f"{br(c['proximo_contato'])}</span>") if c["proximo_contato"] else "&nbsp;"
+        fones = " · ".join(t["exibir"] for t in c["telefones"][:2]) or "sem telefone"
+        st.markdown(f"<div class='cart-linha'>{retorno}</div><div class='cart-linha'>☎ {fones}</div>",
+                    unsafe_allow_html=True)
         if st.button("Abrir", key=f"abrir{onde}{c['id']}", use_container_width=True):
             ss.lead = c["id"]
             st.rerun()
@@ -237,8 +251,6 @@ def cartao(c: dict, onde: str = "f") -> None:
 
 def pagina() -> None:
     with st.sidebar:
-        st.subheader("CRM Cyscon")
-        st.divider()
         st.markdown("**Discador 3C Plus**")
         s3 = ss.sessao3c
         if s3:
@@ -292,8 +304,7 @@ def pagina() -> None:
         cards = [c for c in cards if c["atrasado"]]
     cards.sort(key=lambda c: (c["proximo_contato"] is None, c["proximo_contato"] or "", c["nome"]))
 
-    st.title("PAINELNEWNAMES")
-    st.caption(f"{len(cards)} leads New Names · abra o card para ligar pela 3C")
+    telas_vendedor.faixa("🗂", "New Names · Motor de Vendas", f"{len(cards)} leads · abra o card para ligar pela 3C")
     aba_funil, aba_agenda = st.tabs(["Funil", "Agenda"])
     with aba_funil:
         usadas = [e for e in q["etapas"] if any(c["etapa"] == e["nome"] for c in cards)]
@@ -303,11 +314,7 @@ def pagina() -> None:
             abas = st.tabs([f"{e['nome']} ({sum(c['etapa'] == e['nome'] for c in cards)})" for e in usadas])
             for aba, e in zip(abas, usadas):
                 with aba:
-                    da_etapa = [c for c in cards if c["etapa"] == e["nome"]]
-                    cols = st.columns(3)
-                    for i, c in enumerate(da_etapa):
-                        with cols[i % 3]:
-                            cartao(c)
+                    grade([c for c in cards if c["etapa"] == e["nome"]], cartao)
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = [c for c in q["cards"] if c["proximo_contato"]]
@@ -318,7 +325,4 @@ def pagina() -> None:
             st.markdown(f"#### {titulo} ({len(lista)})")
             if not lista:
                 st.caption("nada aqui")
-            cols = st.columns(3)
-            for i, c in enumerate(sorted(lista, key=lambda c: c["proximo_contato"])):
-                with cols[i % 3]:
-                    cartao(c, "a")
+            grade(sorted(lista, key=lambda c: c["proximo_contato"]), lambda c: cartao(c, "a"))

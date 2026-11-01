@@ -85,6 +85,10 @@ h1{font-size:2rem !important}
 .kpi{background:#fff;border:1px solid #e3e8f2;border-radius:12px;padding:12px 16px}
 .kpi small{color:#5b6b85;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
 .kpi div{font-size:26px;font-weight:700;color:#0f2a5c;line-height:1.2}
+/* cartoes da grade: nome em ate 2 linhas e demais linhas em 1, para caber na altura fixa */
+.cart-nome{font-weight:700;color:#0f2a5c;font-size:15.5px;line-height:1.3;height:2.6em;overflow:hidden;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px}
+.cart-linha{color:#5b6b85;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:3px 0}
 .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>""", unsafe_allow_html=True)
 

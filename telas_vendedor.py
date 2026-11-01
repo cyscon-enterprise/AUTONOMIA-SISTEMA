@@ -270,10 +270,7 @@ def _carteira(todos: bool) -> None:
     with aba_lista:
         if not lista:
             st.info("Nenhum cliente ainda. Os clientes com quem você falar pelo discador aparecem aqui.")
-        cols = st.columns(3)
-        for i, l in enumerate(lista):
-            with cols[i % 3]:
-                cartao(l, "c")
+        grade(lista, lambda l: cartao(l, "c"))
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = sorted([l for l in lista if l["proximo_contato"]], key=lambda l: l["proximo_contato"])
@@ -283,24 +280,28 @@ def _carteira(todos: bool) -> None:
             st.markdown(f"#### {titulo} ({len(grupo)})")
             if not grupo:
                 st.caption("nada aqui")
-            cols = st.columns(3)
-            for i, l in enumerate(grupo):
-                with cols[i % 3]:
-                    cartao(l, "a")
+            grade(grupo, lambda l: cartao(l, "a"))
+
+
+def grade(itens: list, desenhar, por_linha: int = 3) -> None:
+    """Cartoes em linhas de `por_linha`: cada linha abre colunas novas, entao as linhas alinham."""
+    for i in range(0, len(itens), por_linha):
+        cols = st.columns(por_linha)
+        for col, item in zip(cols, itens[i:i + por_linha]):
+            with col:
+                desenhar(item)
 
 
 def cartao(l: dict, onde: str) -> None:
-    with st.container(border=True):
-        st.markdown(f"**{l['nome_exibir'][:60]}**  \n<span style='color:#666;font-size:13px'>"
-                    f"{l['cidade'] or ''}{('/' + l['estado']) if l['estado'] else ''} · {l['etapa_crm'] or 'sem contato'}"
-                    f"</span>", unsafe_allow_html=True)
-        if l.get("vendedor_id") != eu()["id"]:            # so aparece na visao de todos (admin)
-            st.caption(f"👤 {l['vendedor']}")
-        if l["proximo_contato"]:
-            cor = "#b42318" if l["atrasado"] else "#444"
-            st.markdown(f"<span style='color:{cor}'>{'atrasado' if l['atrasado'] else 'retorno'}: "
-                        f"{br(l['proximo_contato'])}</span>", unsafe_allow_html=True)
-        st.caption(f"na carteira desde {l['desde']:%d/%m} · {l['motivo'] or ''}")
+    with st.container(border=True, height=250):          # todos iguais: a grade fica alinhada
+        dono = f" · 👤 {l['vendedor']}" if l.get("vendedor_id") != eu()["id"] else ""   # so na visao de todos
+        retorno = (f"<span class='{'late' if l['atrasado'] else ''}'>{'atrasado' if l['atrasado'] else 'retorno'}: "
+                   f"{br(l['proximo_contato'])}</span>") if l["proximo_contato"] else "&nbsp;"
+        st.markdown(f"<div class='cart-nome' title=\"{l['nome_exibir']}\">{l['nome_exibir']}</div>"
+                    f"<div class='cart-linha'>{l['cidade'] or ''}{('/' + l['estado']) if l['estado'] else ''} · "
+                    f"{l['etapa_crm'] or 'sem contato'}{dono}</div><div class='cart-linha'>{retorno}</div>"
+                    f"<div class='cart-linha'>na carteira desde {l['desde']:%d/%m} · {l['motivo'] or ''}</div>",
+                    unsafe_allow_html=True)
         if st.button("Abrir", key=f"cli{onde}{l['cnpj']}", use_container_width=True):
             ss.cliente = l["cnpj"]
             st.rerun()
