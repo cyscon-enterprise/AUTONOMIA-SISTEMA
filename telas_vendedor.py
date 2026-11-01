@@ -636,7 +636,7 @@ def pagina_visao_geral() -> None:
                                 label_visibility="collapsed") or 7
     g = V.visao_geral(dias)
     q = dados.quadro()
-    faixa("📊", "Visão geral · AutonomIA Seller", f"Últimos {dias} dia(s) · atualizado {dados.agora():%d/%m %H:%M}")
+    faixa("📊", "Visão geral · AutonomIA Vendas", f"Últimos {dias} dia(s) · atualizado {dados.agora():%d/%m %H:%M}")
 
     vend = [v for v in g["vendedores"] if v["ativo"] and not v["admin"]]
     t = g["turno"]
