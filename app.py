@@ -1,4 +1,4 @@
-"""AutonoVendas (CRM online da Cyscon) (Streamlit + Supabase): login por vendedor, discador e carteira.
+"""AutonomIA Seller (CRM online da Cyscon) (Streamlit + Supabase): login por vendedor, discador e carteira.
 
 Cada vendedor entra com login e senha proprios (`crm_vendedores`). O vendedor ve o Discador e a
 carteira DELE; o administrador ve tudo, mais o funil New Names (secao Motor de Vendas) e a Gestao.
@@ -29,7 +29,7 @@ PASTA = os.path.dirname(os.path.abspath(__file__))
 LOGO = os.path.join(PASTA, "static", "logo.png")          # logo e icone feitos no Canva (31/10/2026)
 ICONE = os.path.join(PASTA, "static", "icone.png")
 
-st.set_page_config(page_title="AutonoVendas", page_icon=ICONE, layout="wide")
+st.set_page_config(page_title="AutonomIA Seller", page_icon=ICONE, layout="wide")
 st.logo(LOGO, size="large", icon_image=ICONE)
 
 
@@ -103,7 +103,7 @@ section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-le
 
 def primeiro_acesso() -> None:
     """Ainda nao ha nenhum usuario: quem souber a APP_SENHA cria o administrador."""
-    st.title("AutonoVendas · primeiro acesso")
+    st.title("AutonomIA Seller · primeiro acesso")
     st.write("Ainda não há usuários. Crie o administrador.")
     mestra = _segredo("APP_SENHA")
     if not mestra and os.environ.get("CRM_LOCAL") != "1":
