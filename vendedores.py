@@ -175,6 +175,13 @@ def entrar(login: str, senha: str) -> dict | None:
     return {k: v for k, v in r[0].items() if k != "senha_hash"}
 
 
+def por_id(vendedor_id: int) -> dict | None:
+    """O vendedor ativo (sem o hash), para reabrir a sessao guardada na aba."""
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT * FROM crm_vendedores WHERE id = :i AND ativo", i=vendedor_id)
+    return {k: v for k, v in r[0].items() if k != "senha_hash"} if r else None
+
+
 def criar(nome: str, login: str, senha: str, admin: bool = False) -> dict:
     login = _login_ok(login)
     if not nome.strip() or not login:

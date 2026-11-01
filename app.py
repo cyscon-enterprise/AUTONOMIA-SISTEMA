@@ -20,6 +20,7 @@ import streamlit.components.v1 as components
 
 import dados
 import ia_ligacoes
+import sessao_aba
 import tela_new_names
 import telas_vendedor
 import tresc3c as tresc
@@ -55,6 +56,7 @@ ia_ligacoes.configurar(_segredo("ANTHROPIC_API_KEY"))
 def _preparar() -> bool:
     V.preparar()
     ia_ligacoes.preparar()
+    sessao_aba.preparar()
     return True
 
 
@@ -124,6 +126,7 @@ def primeiro_acesso() -> None:
             st.error(r["erro"])
         else:
             ss.usuario = V.entrar(login, senha)
+            sessao_aba.gravar(ss.usuario["id"])
             st.rerun()
     st.stop()
 
@@ -152,6 +155,7 @@ def tela_convite(token: str, c: dict) -> None:
                 st.stop()
             st.query_params.clear()
             ss.usuario = V.entrar(login, senha)
+            sessao_aba.gravar(ss.usuario["id"])
             st.rerun()
     st.stop()
 
@@ -171,6 +175,7 @@ def tela_login() -> None:
         u = V.entrar(login, senha)
         if u:
             ss.usuario = u
+            sessao_aba.gravar(u["id"])
             st.rerun()
         time.sleep(1)
         st.error("Login ou senha incorretos.")
@@ -183,9 +188,27 @@ if not ss.usuario and st.query_params.get("convite"):
         tela_convite(st.query_params["convite"], _c)
 
 if not ss.usuario:
+    # F5 ou pagina recarregada: a aba guarda o token da sessao (sessao_aba.py); so pede senha se nao houver
+    _tok = sessao_aba.ler_token(apagar=bool(ss.pop("_sair", False)))
+    if _tok is None:
+        st.stop()                                  # o navegador ainda vai responder (roda de novo sozinho)
+    _s = sessao_aba.retomar(_tok)
+    _u = V.por_id(_s["vendedor_id"]) if _s else None
+    if _u:
+        ss.usuario, ss._token_aba = _u, _tok
+        ss.empresa = _s["empresa"]
+        ss.sessao3c = _s["sessao3c"]
+        ss._salvo = (_s["empresa"], _s["sessao3c"])
+
+if not ss.usuario:
     if not V.tem_vendedor():
         primeiro_acesso()
     tela_login()
+
+sessao_aba.escrever_na_aba()
+if ss.get("_salvo") != (ss.get("empresa"), ss.get("sessao3c")):    # empresa ou 3C mudou: guarda p/ o F5
+    sessao_aba.salvar_estado(ss.get("empresa"), ss.get("sessao3c"))
+    ss._salvo = (ss.get("empresa"), ss.get("sessao3c"))
 
 ss.quem = ss.usuario["nome"]                       # assina tudo que se registra no CRM
 
@@ -242,8 +265,10 @@ with st.sidebar:
         st.rerun()
     if st.button("Sair"):
         tresc.sair(ss.get("sessao3c"))
+        sessao_aba.encerrar()
         for k in list(ss.keys()):
             del ss[k]
+        ss._sair = True                            # na proxima rodada o token sai da aba tambem
         st.rerun()
 
 # vendedor: discador, carteira e funil. Administrador: a visao geral do CRM (abre nela) + tudo do vendedor
