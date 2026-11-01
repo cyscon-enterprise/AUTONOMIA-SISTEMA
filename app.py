@@ -250,7 +250,8 @@ with st.sidebar:
 admin = bool(ss.usuario.get("admin"))
 paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=not admin),
            st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira"),
-           st.Page(tela_new_names.pagina, title="Funil New Names", icon="🗂", url_path="new-names")]
+           st.Page(tela_new_names.pagina, title="Funil New Names", icon="🗂", url_path="new-names"),
+           st.Page(telas_vendedor.pagina_funil_servicos, title="Funil Serviços", icon="🛠", url_path="servicos")]
 if admin:
     paginas = [st.Page(telas_vendedor.pagina_visao_geral, title="Visão geral", icon="📊", url_path="visao-geral",
                        default=True)] + paginas + [

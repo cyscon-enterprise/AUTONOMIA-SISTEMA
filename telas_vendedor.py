@@ -491,6 +491,50 @@ def ficha_cliente(cnpj: str) -> None:
                 st.markdown(f"**{r}:** {e[k]}")
 
 
+# ---------------------------------------------------------------- Funil Servicos
+
+def pagina_funil_servicos() -> None:
+    """Kanban dos clientes que vieram do discador nas campanhas #SERVIÇO. A etapa e a da carteira
+    (empresas.etapa_crm): arrastar aqui ou mudar na ficha da no mesmo."""
+    import kanban_dnd
+
+    mostrar_msg()
+    _sincronizar()
+    if ss.get("cliente"):
+        ficha_cliente(ss.cliente)
+        return
+    admin = eu().get("admin")
+    cards = V.funil_servicos(None if admin else eu()["id"])
+    faixa("🛠", "Funil Serviços", "Clientes atendidos pelo discador nas campanhas #SERVIÇO"
+          + (" · todos os vendedores" if admin else ""))
+    if not cards:
+        st.info("Nenhum cliente ainda. Quem você atender pelo discador numa campanha da 3C cujo nome começa com "
+                "**#SERVIÇO** aparece aqui.")
+    etapas = dados.etapas()
+    primeira = etapas[0]["nome"] if etapas else ""
+    st.caption("Arraste o card para outra coluna para mudar a etapa · clique no card para abrir a ficha")
+    r = kanban_dnd.quadro(
+        [{"nome": e["nome"], "cor": e["cor"]} for e in etapas],
+        [{"id": c["cnpj"], "nome": c["nome_exibir"], "etapa": c["etapa_crm"] or primeira,
+          "local": f"{c['cidade'] or ''}{('/' + c['estado']) if c['estado'] else ''}"
+                   + (f" · {c['vendedor']}" if admin and c.get("vendedor") else ""),
+          "retorno": (f"{'atrasado' if c['atrasado'] else 'retorno'}: {br(c['proximo_contato'])}"
+                      if c["proximo_contato"] else ""),
+          "atrasado": c["atrasado"], "selo": (c["campanha"] or "#SERVIÇO")[:40], "selo_cls": "ok",
+          "fone": c["telefones"][0]["exibir"] if c["telefones"] else "sem telefone"} for c in cards],
+        key="kanban_servicos")
+    if r.mover and r.mover.get("n") != ss.get("kbs_ultimo"):
+        ss.kbs_ultimo = r.mover["n"]
+        res = V.mover(eu(), str(r.mover["id"]), r.mover["etapa"])
+        if res.get("erro"):
+            ss.msg = ("erro", res["erro"])
+        st.rerun()
+    if r.abrir and r.abrir.get("n") != ss.get("kbs_ultimo"):
+        ss.kbs_ultimo = r.abrir["n"]
+        ss.cliente = str(r.abrir["id"])
+        st.rerun()
+
+
 # ---------------------------------------------------------------- Visao geral (admin)
 
 def pagina_visao_geral() -> None:

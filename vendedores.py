@@ -75,6 +75,12 @@ DDL = [
         entrou_carteira BOOLEAN NOT NULL DEFAULT FALSE,
         lido_em TIMESTAMP NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS ix_disc_cham_cnpj ON crm_discador_chamadas (cnpj)",
+    """CREATE TABLE IF NOT EXISTS crm_servicos_cards (
+        cnpj VARCHAR(14) PRIMARY KEY,
+        vendedor_id INTEGER REFERENCES crm_vendedores(id),
+        campanha VARCHAR(120),
+        chamada_3c VARCHAR(40),
+        desde TIMESTAMP NOT NULL)""",
     """CREATE TABLE IF NOT EXISTS crm_empresas_parceiras (
         id SERIAL PRIMARY KEY,
         nome VARCHAR(80) NOT NULL UNIQUE,
@@ -357,6 +363,37 @@ def motivo_carteira(ch: dict) -> str:
     return ""
 
 
+def campanha_de_servico(nome: str | None) -> bool:
+    """Campanhas de servico sao as da 3C cujo nome comeca com #SERVIÇO (atuais e futuras)."""
+    return dados._sem_acento(nome or "").upper().replace(" ", "").startswith("#SERVICO")
+
+
+def _para_servicos(conn, cnpj: str, t: dict, cid: str, campanha: str) -> bool:
+    """Poe a empresa no Funil Servicos (a etapa e a mesma da carteira: empresas.etapa_crm)."""
+    n = conn.execute(sa.text("INSERT INTO crm_servicos_cards (cnpj, vendedor_id, campanha, chamada_3c, desde) "
+                             "VALUES (:c, :v, :cp, :ch, :d) ON CONFLICT (cnpj) DO NOTHING"),
+                     {"c": cnpj, "v": t["vendedor_id"], "cp": (campanha or "")[:120], "ch": cid, "d": dados.agora()}).rowcount
+    if n:
+        _historico(conn, cnpj, "nota", t["nome"], f"Entrou no Funil Serviços (campanha {campanha}).")
+    return bool(n)
+
+
+def funil_servicos(vendedor_id: int | None) -> list[dict]:
+    """Os cards do Funil Servicos (de um vendedor, ou todos para o admin)."""
+    filtro = "WHERE s.vendedor_id = :v" if vendedor_id else ""
+    with dados.engine().connect() as conn:
+        linhas = _q(conn, f"SELECT e.*, s.campanha, s.desde, s.vendedor_id, v.nome AS vendedor "
+                          "FROM crm_servicos_cards s JOIN empresas e ON e.cnpj = s.cnpj "
+                          f"LEFT JOIN crm_vendedores v ON v.id = s.vendedor_id {filtro} ORDER BY s.desde DESC",
+                    **({"v": vendedor_id} if vendedor_id else {}))
+    hoje = dados.agora().isoformat(sep=" ", timespec="minutes")
+    for l in linhas:
+        l["nome_exibir"] = l["nome_fantasia"] or l["nome"] or l["cnpj"]
+        l["atrasado"] = bool(l["proximo_contato"] and l["proximo_contato"] <= hoje)
+        l["telefones"] = telefones_empresa(l)
+    return linhas
+
+
 def sincronizar(forcar: bool = False) -> dict:
     """Le as chamadas do discador desde a ultima leitura e reparte pelos turnos.
     Roda no maximo uma vez por minuto para o site todo (marca em `crm_discador_sync`)."""
@@ -403,6 +440,8 @@ def sincronizar(forcar: bool = False) -> dict:
                 "ON CONFLICT (chamada_3c) DO UPDATE SET qualificacao = EXCLUDED.qualificacao, "
                 "resultado = EXCLUDED.resultado, duracao = EXCLUDED.duracao, gravada = EXCLUDED.gravada, lido_em = :l"),
                 vals)
+            if motivo and campanha_de_servico(ch.get("campaign")):
+                _para_servicos(conn, cnpj, t, cid, str(ch.get("campaign")))
             if antes and antes[0]["entrou_carteira"]:
                 continue
             if not antes or (antes[0]["qualificacao"] or "") != (vals["ql"] or ""):
