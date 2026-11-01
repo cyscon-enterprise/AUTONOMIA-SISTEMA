@@ -42,6 +42,17 @@ def kpi(col, rotulo: str, valor) -> None:
     col.markdown(f"<div class='kpi'><small>{rotulo}</small><div>{valor}</div></div>", unsafe_allow_html=True)
 
 
+def incluir_telefone(cnpj: str, lead_id: int | None = None) -> None:
+    """Campo para incluir um telefone novo; depois de salvo ele vira um botao de ligar pela 3C."""
+    with st.popover("➕ Incluir telefone", use_container_width=True):
+        with st.form(f"novotel{cnpj}", clear_on_submit=True):
+            tel = st.text_input("Telefone com DDD", placeholder="(11) 91234-5678")
+            rot = st.text_input("De quem é (opcional)", placeholder="ex.: Carlos, gerente de TI")
+            if st.form_submit_button("Salvar telefone", type="primary", use_container_width=True):
+                avisar(dados.adicionar_telefone(cnpj, tel, rot, ss.get("quem") or eu()["nome"], lead_id))
+                st.rerun()
+
+
 def br(v) -> str:
     if not v:
         return ""
@@ -361,11 +372,24 @@ def ficha_cliente(cnpj: str) -> None:
                 st.markdown("**Na planilha**")
                 st.text(e["historico"])
     with dir_:
-        st.markdown("#### Telefones")
+        st.markdown("#### Ligar pela 3C")
         if not f["telefones"]:
             st.caption("Sem telefone.")
+        ramal = (ss.get("sessao3c") or {}).get("ramal") or "1003"
         for t in f["telefones"]:
-            st.markdown(f"[☎ {t['exibir']}](tel:+55{t['tel']}) · {', '.join(t['rotulos'])}")
+            if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{cnpj}{t['tel']}",
+                         use_container_width=True):
+                with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
+                    try:
+                        tresc.ligar("55" + t["tel"], ramal)
+                        V.registrar(eu(), cnpj, "ligacao", f"Ligação pedida à 3C para {t['exibir']} (ramal {ramal})")
+                        ss.msg = ("ok", f"Ligando: o ramal {ramal} toca primeiro, atenda para discar.")
+                    except tresc.Erro3C as err:
+                        ss.msg = ("erro", f"3C: {err}")
+                st.rerun()
+        incluir_telefone(cnpj)
+        st.caption(f"O ramal {ramal} toca primeiro; ao atender, a 3C disca para o cliente. "
+                   "Fora da campanha: com o discador ligando, use o telefone da barra.")
         st.markdown("#### Etapa e retorno")
         nomes = [x["nome"] for x in dados.etapas()]
         atual = e.get("etapa_crm") or ""

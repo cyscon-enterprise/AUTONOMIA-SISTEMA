@@ -176,6 +176,7 @@ def ver_ficha(lead_id: int) -> None:
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
                     avisar(dados.ligar(lead_id, t["tel"], ss.quem, ramal_atual()))
                 st.rerun()
+        telas_vendedor.incluir_telefone(L.get("cnpj"), lead_id)
         st.caption(f"O ramal {ramal_atual()} toca primeiro; ao atender, a 3C disca para o cliente.")
 
         st.markdown("#### Etapa e retorno")

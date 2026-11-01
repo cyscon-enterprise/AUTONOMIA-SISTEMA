@@ -75,6 +75,13 @@ DDL = [
         entrou_carteira BOOLEAN NOT NULL DEFAULT FALSE,
         lido_em TIMESTAMP NOT NULL)""",
     "CREATE INDEX IF NOT EXISTS ix_disc_cham_cnpj ON crm_discador_chamadas (cnpj)",
+    """CREATE TABLE IF NOT EXISTS crm_telefones_extra (
+        cnpj VARCHAR(14) NOT NULL,
+        telefone VARCHAR(11) NOT NULL,
+        rotulo VARCHAR(40),
+        quem VARCHAR(60),
+        criado_em TIMESTAMP NOT NULL,
+        PRIMARY KEY (cnpj, telefone))""",
     """CREATE TABLE IF NOT EXISTS crm_carteira (
         cnpj VARCHAR(14) PRIMARY KEY,
         vendedor_id INTEGER NOT NULL REFERENCES crm_vendedores(id),
@@ -387,10 +394,12 @@ COLS_TEL = [("telefone_site", "site"), ("telefone_1", "tel 1"), ("telefone_2", "
             ("whatsapp_fiscal", "WhatsApp Fiscal"), ("whatsapp_contabil", "WhatsApp Contábil")]
 
 
-def telefones_empresa(e: dict) -> list[dict]:
+def telefones_empresa(e: dict, extras: list[dict] | None = None) -> list[dict]:
     vistos: dict[str, dict] = {}
-    for col, rot in COLS_TEL:
-        for parte in re.split(r"[/;,]", str(e.get(col) or "")):
+    fontes = [(x["telefone"], x["rotulo"]) for x in (extras or [])]       # incluidos a mao vem primeiro
+    fontes += [(e.get(col), rot) for col, rot in COLS_TEL]
+    for bruto, rot in fontes:
+        for parte in re.split(r"[/;,]", str(bruto or "")):
             d = dados.normalizar(parte)
             if not d:
                 continue
@@ -411,7 +420,8 @@ def ficha(cnpj: str) -> dict | None:
         cham = _q(conn, "SELECT d.*, v.nome AS vendedor FROM crm_discador_chamadas d "
                         "LEFT JOIN crm_vendedores v ON v.id = d.vendedor_id WHERE d.cnpj = :c "
                         "ORDER BY d.quando DESC LIMIT 100", c=cnpj)
-    return {"empresa": e[0], "historico": hist, "chamadas": cham, "telefones": telefones_empresa(e[0]),
+        extras = dados.telefones_extras(conn, cnpj).get(cnpj)
+    return {"empresa": e[0], "historico": hist, "chamadas": cham, "telefones": telefones_empresa(e[0], extras),
             "dono": dono(cnpj)}
 
 

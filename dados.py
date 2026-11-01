@@ -85,9 +85,40 @@ def formatar(d: str) -> str:
     return d
 
 
-def telefones(lead: dict, fora: set[str] | None = None) -> list[dict]:
+def telefones_extras(conn, cnpj: str | None = None) -> dict[str, list[dict]]:
+    """Telefones incluidos a mao no CRM (`crm_telefones_extra`), por CNPJ."""
+    sql = "SELECT cnpj, telefone, rotulo FROM crm_telefones_extra" + (" WHERE cnpj = :c" if cnpj else "")
+    out: dict[str, list[dict]] = {}
+    try:
+        for r in _q(conn, sql + " ORDER BY criado_em", **({"c": cnpj} if cnpj else {})):
+            out.setdefault(r["cnpj"], []).append(r)
+    except sa.exc.DBAPIError:                      # tabela ainda nao criada
+        conn.rollback()
+    return out
+
+
+def adicionar_telefone(cnpj: str, telefone: str, rotulo: str, quem: str, lead_id: int | None = None) -> dict:
+    """Inclui um telefone novo na empresa; ele vira botao de ligar pela 3C nas fichas."""
+    d = normalizar(telefone)
+    if not d:
+        return {"erro": "Telefone inválido: use DDD + número (10 ou 11 dígitos)."}
+    if not cnpj:
+        return {"erro": "Empresa sem CNPJ: não dá para guardar o telefone."}
+    rot = (rotulo or "").strip()[:40] or "incluído"
+    with engine().begin() as conn:
+        n = conn.execute(sa.text(
+            "INSERT INTO crm_telefones_extra (cnpj, telefone, rotulo, quem, criado_em) VALUES (:c, :t, :r, :q, :w) "
+            "ON CONFLICT (cnpj, telefone) DO NOTHING"),
+            {"c": cnpj, "t": d, "r": rot, "q": (quem or "")[:60], "w": agora()}).rowcount
+        if n and lead_id:
+            _registrar(conn, lead_id, cnpj, "nota", quem, f"Telefone incluído: {formatar(d)} ({rot})")
+    return {"ok": True, "mensagem": f"Telefone {formatar(d)} incluído." if n else "Esse telefone já estava na ficha."}
+
+
+def telefones(lead: dict, fora: set[str] | None = None, extras: list[dict] | None = None) -> list[dict]:
     vistos: dict[str, dict] = {}
-    fontes = [(lead.get(c), r) for c, r in COLS_TELEFONE]
+    fontes = [(x["telefone"], x["rotulo"]) for x in (extras or [])]
+    fontes += [(lead.get(c), r) for c, r in COLS_TELEFONE]
     fontes += [(p, "outro") for p in str(lead.get("telefone_todos") or "").split("/")]
     for bruto, rotulo in fontes:
         d = normalizar(bruto)
@@ -143,6 +174,7 @@ def quadro() -> dict:
         estados = {r["lead_id"]: r for r in _q(conn, "SELECT * FROM crm_mv_cards")}
         fora = _descartados(conn)
         verif = _vereditos(conn)
+        extras = telefones_extras(conn)
     hoje = agora().isoformat(sep=" ", timespec="minutes")
     cards = []
     for l in leads:
@@ -153,7 +185,8 @@ def quadro() -> dict:
             "razao_social": l.get("razao_social") or "", "cidade": l.get("cidade") or "",
             "estado": l.get("estado") or "", "status_crm": l.get("status_crmtotvs") or "",
             "etapa": e.get("etapa") or (fases[0]["nome"] if fases else ""), "proximo_contato": prox,
-            "atrasado": bool(prox and prox <= hoje), "telefones": telefones(l, fora.get(l["id"])),
+            "atrasado": bool(prox and prox <= hoje),
+            "telefones": telefones(l, fora.get(l["id"]), extras.get(l.get("cnpj"))),
             "grupo": verif.get(l.get("cnpj")),
         })
     return {"etapas": fases, "cards": cards}
@@ -169,9 +202,10 @@ def ficha(lead_id: int) -> dict | None:
         ligs = _q(conn, "SELECT * FROM crm_mv_ligacoes WHERE lead_id = :i ORDER BY pedido_em DESC LIMIT 100", i=lead_id)
         fora = _descartados(conn).get(lead_id)
         verif = _vereditos(conn).get(ls[0].get("cnpj"))
+        extras = telefones_extras(conn, ls[0].get("cnpj")).get(ls[0].get("cnpj"))
     lead = {k: (limpar_contato(v) if k.startswith("contato_") else v) for k, v in ls[0].items()}
     return {"lead": lead, "estado": estado, "historico": hist, "ligacoes": ligs,
-            "telefones": telefones(lead, fora), "grupo": verif}
+            "telefones": telefones(lead, fora, extras), "grupo": verif}
 
 
 # ---------------------------------------------------------------- escrita no card
@@ -247,7 +281,8 @@ def ligar(lead_id: int, telefone: str, quem: str, ramal: str) -> dict:
         ls = _q(conn, f"SELECT * FROM {FONTE} WHERE id = :i", i=lead_id)
         if not ls:
             return {"erro": "lead nao encontrado"}
-        do_lead = {t["tel"]: t for t in telefones(ls[0])}
+        cnpj = ls[0].get("cnpj")
+        do_lead = {t["tel"]: t for t in telefones(ls[0], extras=telefones_extras(conn, cnpj).get(cnpj))}
         if tel not in do_lead:
             return {"erro": "esse telefone nao e deste lead"}
         recente = conn.execute(sa.text(
