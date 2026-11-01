@@ -89,13 +89,9 @@ h1{font-size:2rem !important}
 .cart-nome{font-weight:700;color:#0f2a5c;font-size:15.5px;line-height:1.3;height:2.6em;overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px}
 .cart-linha{color:#5b6b85;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:3px 0}
-/* kanban do funil: colunas de largura fixa, quadro rola para o lado */
-.st-key-kanban > div > [data-testid="stHorizontalBlock"]{flex-wrap:nowrap;overflow-x:auto;padding-bottom:8px}
-.st-key-kanban > div > [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]{flex:0 0 250px;min-width:250px;
-  background:#eef2f9;border-radius:10px;padding:8px}
-.kb-topo{display:flex;justify-content:space-between;align-items:center;border-top:4px solid #94a3b8;
-  background:#fff;border-radius:8px;padding:8px 10px;font-weight:600;color:#0f2a5c;font-size:14px}
-.kb-topo b{background:#eef2f9;border-radius:10px;padding:0 8px;font-size:12px;color:#5b6b85}
+/* barra lateral estreita: sobra tela para o kanban */
+section[data-testid="stSidebar"]{width:240px !important;min-width:240px !important;max-width:240px !important}
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-left:.9rem;padding-right:.9rem}
 .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>""", unsafe_allow_html=True)
 
