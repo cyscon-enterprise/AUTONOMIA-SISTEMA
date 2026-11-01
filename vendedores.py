@@ -84,7 +84,7 @@ DDL = [
         ativa BOOLEAN NOT NULL DEFAULT TRUE,
         criado_em TIMESTAMP NOT NULL DEFAULT now())""",
     """INSERT INTO crm_empresas_parceiras (nome, descricao, produto, comissao_pct)
-       VALUES ('Cyscon', 'Revenda TOTVS: ERP e sistemas de gestão para empresas de todos os portes.',
+       VALUES ('Cyscon Consultoria', 'Revenda TOTVS: ERP e sistemas de gestão para empresas de todos os portes.',
                'ERP TOTVS (Protheus, Datasul, RM, Winthor e outros)', 10)
        ON CONFLICT (nome) DO NOTHING""",
     """CREATE TABLE IF NOT EXISTS crm_convites (
