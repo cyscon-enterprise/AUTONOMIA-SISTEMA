@@ -137,6 +137,8 @@ with st.sidebar:
 paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=True),
            st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira")]
 if ss.usuario.get("admin"):
-    paginas += [st.Page(tela_new_names.pagina, title="New Names (Motor de Vendas)", icon="🗂", url_path="new-names"),
+    paginas += [st.Page(telas_vendedor.pagina_carteiras_todos, title="Carteiras (todos)", icon="👥",
+                        url_path="carteiras"),
+                st.Page(tela_new_names.pagina, title="New Names (Motor de Vendas)", icon="🗂", url_path="new-names"),
                 st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
 st.navigation(paginas, position="top").run()             # menu no topo: a barra fica so para o telefone

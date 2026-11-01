@@ -216,15 +216,22 @@ def baixa_na_tela(n: dict) -> None:
 # ---------------------------------------------------------------- Carteira
 
 def pagina_carteira() -> None:
+    _carteira(todos=False)
+
+
+def pagina_carteiras_todos() -> None:
+    """So do administrador: a carteira de todos os vendedores, com quem e dono de cada cliente."""
+    _carteira(todos=True)
+
+
+def _carteira(todos: bool) -> None:
     mostrar_msg()
     _sincronizar()
     if ss.get("cliente"):
         ficha_cliente(ss.cliente)
         return
-    admin = eu().get("admin")
-    st.title("Carteira de clientes" if admin else "Minha carteira")
-    vend_id = None if admin and st.toggle("Ver de todos os vendedores", value=False) else eu()["id"]
-    lista = V.carteira(vend_id)
+    st.title("Carteiras de todos os vendedores" if todos else "Minha carteira")
+    lista = V.carteira(None if todos else eu()["id"])
     c1, c2 = st.columns([3, 1])
     busca = c1.text_input("Buscar empresa, CNPJ ou cidade", label_visibility="collapsed",
                           placeholder="Buscar empresa, CNPJ ou cidade")
@@ -262,7 +269,7 @@ def cartao(l: dict, onde: str) -> None:
         st.markdown(f"**{l['nome_exibir'][:60]}**  \n<span style='color:#666;font-size:13px'>"
                     f"{l['cidade'] or ''}{('/' + l['estado']) if l['estado'] else ''} · {l['etapa_crm'] or 'sem contato'}"
                     f"</span>", unsafe_allow_html=True)
-        if eu().get("admin"):
+        if l.get("vendedor_id") != eu()["id"]:            # so aparece na visao de todos (admin)
             st.caption(f"👤 {l['vendedor']}")
         if l["proximo_contato"]:
             cor = "#b42318" if l["atrasado"] else "#444"
