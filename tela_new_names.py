@@ -164,6 +164,18 @@ def ver_ficha(lead_id: int) -> None:
         st.markdown(f'<div class="insight">{ins}</div>' if ins else
                     '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
                     unsafe_allow_html=True)
+        with st.expander("Dados do lead"):            # logo abaixo do insight (pedido do usuario, 01/11)
+            campos = [("razao_social", "Razão social"), ("cnpj", "CNPJ"), ("cidade", "Cidade"), ("estado", "UF"),
+                      ("status_crmtotvs", "Status no CRM TOTVS"), ("codigo_crmtotvs", "Código CRM"),
+                      ("entidade", "Entidade"), ("base", "Base"), ("segmento", "Segmento"), ("mrr", "MRR"),
+                      ("faturamento_totvs", "Faturamento TOTVS"), ("porte_da_empresa", "Porte"),
+                      ("funcionarios", "Funcionários"), ("contato_crmtotvs", "Contato no CRM"),
+                      ("contato_de_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_fiscal", "Contato Fiscal"),
+                      ("contato_financeiro", "Contato Financeiro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
+                      ("historico_crmtotvs", "Histórico no CRM TOTVS")]
+            for k, r in campos:
+                if L.get(k):
+                    st.markdown(f"**{r}:** {L[k]}")
         st.markdown("#### Histórico")
         c_at = st.columns([3, 1])[1]
         if c_at.button("🔄 atualizar ligações", use_container_width=True):
@@ -236,19 +248,6 @@ def ver_ficha(lead_id: int) -> None:
                 avisar(dados.interagir(lead_id, tipo, texto, ss.quem) if texto.strip()
                        else {"erro": "Escreva o que aconteceu."}, "Registrado.")
                 st.rerun()
-
-    with st.expander("Dados do lead"):
-        campos = [("razao_social", "Razão social"), ("cnpj", "CNPJ"), ("cidade", "Cidade"), ("estado", "UF"),
-                  ("status_crmtotvs", "Status no CRM TOTVS"), ("codigo_crmtotvs", "Código CRM"),
-                  ("entidade", "Entidade"), ("base", "Base"), ("segmento", "Segmento"), ("mrr", "MRR"),
-                  ("faturamento_totvs", "Faturamento TOTVS"), ("porte_da_empresa", "Porte"),
-                  ("funcionarios", "Funcionários"), ("contato_crmtotvs", "Contato no CRM"),
-                  ("contato_de_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_fiscal", "Contato Fiscal"),
-                  ("contato_financeiro", "Contato Financeiro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
-                  ("historico_crmtotvs", "Histórico no CRM TOTVS")]
-        for k, r in campos:
-            if L.get(k):
-                st.markdown(f"**{r}:** {L[k]}")
 
 
 # ---------------------------------------------------------------- funil e agenda

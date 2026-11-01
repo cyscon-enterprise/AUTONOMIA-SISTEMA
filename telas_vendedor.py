@@ -442,6 +442,17 @@ def ficha_cliente(cnpj: str) -> None:
                                       f["dono"] and f"carteira de {f['dono']['nome']}"] if x))
     esq, dir_ = st.columns([3, 2], gap="large")
     with esq:
+        with st.expander("Dados da empresa"):          # no alto, antes do historico (como no funil New Names)
+            campos = [("cnpj", "CNPJ"), ("aba", "Aba"), ("entidade", "Entidade"), ("segmento", "Segmento"),
+                      ("base", "Base"), ("mrr", "MRR"), ("produto", "ERP"), ("porte_da_empresa", "Porte"),
+                      ("cnae_descricao", "Atividade"), ("quadro_de_funcionarios", "Funcionários"),
+                      ("endereco", "Endereço"), ("bairro", "Bairro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
+                      ("contato_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_financeiro", "Contato Financeiro"),
+                      ("contato_fiscal", "Contato Fiscal"), ("contato_contabil", "Contato Contábil"),
+                      ("socios_rf", "Sócios (Receita)")]
+            for k, r in campos:
+                if e.get(k):
+                    st.markdown(f"**{r}:** {e[k]}")
         st.markdown("#### Histórico")
         linha = [("ch", c["quando"], c) for c in f["chamadas"]]
         linha += [("h", h["quando"], h) for h in f["historico"] if not str(h.get("texto") or "").startswith("Discador 3C")]
@@ -533,17 +544,6 @@ def ficha_cliente(cnpj: str) -> None:
                 avisar(V.transferir(eu(), cnpj, op[alvo]))
                 ss.cliente = None
                 st.rerun()
-    with st.expander("Dados da empresa"):
-        campos = [("cnpj", "CNPJ"), ("aba", "Aba"), ("entidade", "Entidade"), ("segmento", "Segmento"),
-                  ("base", "Base"), ("mrr", "MRR"), ("produto", "ERP"), ("porte_da_empresa", "Porte"),
-                  ("cnae_descricao", "Atividade"), ("quadro_de_funcionarios", "Funcionários"),
-                  ("endereco", "Endereço"), ("bairro", "Bairro"), ("email", "E-mail"), ("site_da_empresa", "Site"),
-                  ("contato_ti", "Contato TI"), ("contato_rh", "Contato RH"), ("contato_financeiro", "Contato Financeiro"),
-                  ("contato_fiscal", "Contato Fiscal"), ("contato_contabil", "Contato Contábil"),
-                  ("socios_rf", "Sócios (Receita)")]
-        for k, r in campos:
-            if e.get(k):
-                st.markdown(f"**{r}:** {e[k]}")
 
 
 # ---------------------------------------------------------------- Funil Servicos
