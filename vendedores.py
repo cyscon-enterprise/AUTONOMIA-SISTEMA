@@ -127,6 +127,8 @@ DDL = [
     "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_versao VARCHAR(20)",
     "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_aceite_em TIMESTAMP",
     "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_ip VARCHAR(45)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS documento VARCHAR(14)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_vendedores_documento ON crm_vendedores (documento)",
 ]
 
 TERMOS_VERSAO = "1.0"
@@ -223,37 +225,79 @@ def trocar_senha(vendedor_id: int, senha: str) -> dict:
     return {"ok": True, "mensagem": "Senha trocada."}
 
 
-def cadastrar(nome: str, email: str, celular: str, cidade: str, login: str, senha: str, ip: str | None) -> dict:
-    """Cadastro aberto: cria o vendedor PENDENTE (nao entra) ate um administrador aprovar.
-    Guarda o aceite dos termos (versao, data e IP), como pede a clausula 8.2 do contrato."""
+def documento_ok(doc: str) -> str:
+    """CPF (11) ou CNPJ (14) so com digitos, se os digitos verificadores baterem; senao ""."""
+    d = re.sub(r"\D", "", doc or "")
+    if len(d) not in (11, 14) or len(set(d)) == 1:
+        return ""
+    if len(d) == 11:
+        for n in (9, 10):
+            soma = sum(int(d[i]) * (n + 1 - i) for i in range(n))
+            if (soma * 10 % 11) % 10 != int(d[n]):
+                return ""
+        return d
+    for n in (12, 13):
+        pesos = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] if n == 12 else [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        resto = sum(int(d[i]) * pesos[i] for i in range(n)) % 11
+        if (0 if resto < 2 else 11 - resto) != int(d[n]):
+            return ""
+    return d
+
+
+def validar_cadastro(nome: str, documento: str, email: str, celular: str, cidade: str, login: str,
+                     senha: str) -> dict:
+    """Confere os dados do cadastro antes de mandar o codigo por e-mail: {"erro"} ou os dados limpos."""
     email = (email or "").strip().lower()
     celular = re.sub(r"\D", "", celular or "")
     if celular.startswith("55") and len(celular) > 11:
         celular = celular[2:]
+    doc = documento_ok(documento)
+    if not (nome or "").strip():
+        return {"erro": "Informe seu nome ou a razão social."}
+    if not doc:
+        return {"erro": "CPF ou CNPJ inválido. Confira os números."}
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         return {"erro": "Informe um e-mail válido."}
     if len(celular) not in (10, 11):
         return {"erro": "Informe o celular com DDD (ex.: 71 99999-8888)."}
     if not (cidade or "").strip():
         return {"erro": "Informe sua cidade."}
+    if not _login_ok(login):
+        return {"erro": "Escolha um login (letras, números, ponto ou traço)."}
+    if len(senha or "") < 8:
+        return {"erro": "A senha precisa ter pelo menos 8 caracteres."}
     with dados.engine().connect() as conn:
+        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE documento = :d"), {"d": doc}).first():
+            return {"erro": "Já existe um cadastro com esse CPF/CNPJ."}
         if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE lower(email) = :e"), {"e": email}).first():
             return {"erro": "Já existe um cadastro com esse e-mail."}
-    r = criar(nome, login, senha)
+        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE login = :l"), {"l": _login_ok(login)}).first():
+            return {"erro": f"Já existe alguém com o login '{_login_ok(login)}'. Escolha outro."}
+    return {"ok": True, "nome": nome.strip(), "documento": doc, "email": email, "celular": celular,
+            "cidade": cidade.strip(), "login": _login_ok(login), "senha": senha}
+
+
+def cadastrar(d: dict, ip: str | None) -> dict:
+    """Cadastro aberto (depois de confirmar o e-mail): cria o vendedor PENDENTE (nao entra) ate um
+    administrador aprovar. Guarda o aceite dos termos (versao, data e IP), como pede a clausula 8.2."""
+    d = validar_cadastro(d["nome"], d["documento"], d["email"], d["celular"], d["cidade"], d["login"], d["senha"])
+    if d.get("erro"):
+        return d
+    r = criar(d["nome"], d["login"], d["senha"])
     if r.get("erro"):
         return r
     with dados.engine().begin() as conn:
         conn.execute(sa.text(
-            "UPDATE crm_vendedores SET ativo = FALSE, pendente = TRUE, email = :e, celular = :c, cidade = :ci, "
-            "termos_versao = :tv, termos_aceite_em = :ta, termos_ip = :ip WHERE login = :l"),
-            {"e": email, "c": celular, "ci": cidade.strip()[:80], "tv": TERMOS_VERSAO, "ta": dados.agora(),
-             "ip": (ip or "")[:45] or None, "l": _login_ok(login)})
+            "UPDATE crm_vendedores SET ativo = FALSE, pendente = TRUE, documento = :doc, email = :e, celular = :c, "
+            "cidade = :ci, termos_versao = :tv, termos_aceite_em = :ta, termos_ip = :ip WHERE login = :l"),
+            {"doc": d["documento"], "e": d["email"], "c": d["celular"], "ci": d["cidade"][:80], "tv": TERMOS_VERSAO,
+             "ta": dados.agora(), "ip": (ip or "")[:45] or None, "l": d["login"]})
     return {"ok": True}
 
 
 def pendentes() -> list[dict]:
     with dados.engine().connect() as conn:
-        return _q(conn, "SELECT id, nome, login, email, celular, cidade, criado_em, termos_versao, termos_aceite_em "
+        return _q(conn, "SELECT id, nome, login, documento, email, celular, cidade, criado_em, termos_versao, termos_aceite_em "
                         "FROM crm_vendedores WHERE pendente ORDER BY criado_em")
 
 

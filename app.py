@@ -7,18 +7,24 @@ Secrets do site (Streamlit > Settings > Secrets):
     APP_SENHA     so para o PRIMEIRO acesso: cria o administrador quando ainda nao ha ninguem
     DATABASE_URL  conexao Postgres do Supabase (pooler, projeto sieqohnzcrjgrhirzocj)
     TRESC_TOKEN   token de servico da 3C Plus
+    SMTP_USUARIO / SMTP_SENHA   Gmail remetente + senha de app (codigo de confirmacao do cadastro)
 Rodando no PC sem secrets.toml, cai nas variaveis CYSCON_DATABASE_URL / CYSCON_3C_TOKEN.
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
+import html
 import os
+import re
+import secrets
 import time
 
 import streamlit as st
 import streamlit.components.v1 as components
 
 import dados
+import email_envio
 import ia_ligacoes
 import sessao_aba
 import tela_new_names
@@ -50,6 +56,7 @@ def _segredo(nome: str, *alternativas: str) -> str:
 dados.configurar(_segredo("DATABASE_URL", "CYSCON_DATABASE_URL"))
 tresc.configurar(_segredo("TRESC_TOKEN", "CYSCON_3C_TOKEN"))
 ia_ligacoes.configurar(_segredo("ANTHROPIC_API_KEY"))
+email_envio.configurar(_segredo("SMTP_USUARIO"), _segredo("SMTP_SENHA"), _segredo("SMTP_HOST"), _segredo("SMTP_PORTA"))
 
 
 @st.cache_resource
@@ -184,7 +191,7 @@ def tela_login() -> None:
             st.error("Login ou senha incorretos.")
         st.markdown("<p style='text-align:center;color:#5b6b85;margin:14px 0 4px'>Ainda não tem acesso?</p>",
                     unsafe_allow_html=True)
-        if st.button("Quero me cadastrar como vendedor", use_container_width=True):
+        if st.button("Quero me cadastrar como vendedor autônomo", use_container_width=True):
             ss.tela_cadastro = True
             st.rerun()
     st.stop()
@@ -207,6 +214,63 @@ qualificar os leads.
 """
 
 
+CODIGO_VALIDADE_MIN = 15
+CODIGO_TENTATIVAS = 5
+CODIGO_REENVIO_S = 60
+
+
+def _mandar_codigo(d: dict) -> dict:
+    """Gera um codigo de 6 digitos, manda para o e-mail do cadastro e guarda so o hash nesta sessao."""
+    pendente = ss.get("cadastro_codigo")
+    if pendente and time.time() - pendente["enviado"] < CODIGO_REENVIO_S:
+        return {"erro": f"Aguarde {CODIGO_REENVIO_S} segundos para pedir outro código."}
+    codigo = f"{secrets.randbelow(10**6):06d}"
+    r = email_envio.enviar_codigo(d["email"], d["nome"], codigo)
+    if r.get("erro"):
+        return r
+    ss.cadastro_codigo = {"dados": d, "hash": hashlib.sha256(codigo.encode()).hexdigest(),
+                          "enviado": time.time(), "tentativas": 0}
+    return {"ok": True}
+
+
+def confirmar_email() -> None:
+    """Segundo passo do cadastro: digitar o codigo que chegou no e-mail."""
+    c = ss.cadastro_codigo
+    d = c["dados"]
+    st.markdown(f"<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Enviamos um código de 6 números para "
+                f"<b>{html.escape(d['email'])}</b>. Confira também a caixa de spam.</p>", unsafe_allow_html=True)
+    with st.form("codigo"):
+        digitado = st.text_input("Código de confirmação", max_chars=6, placeholder="000000")
+        ok = st.form_submit_button("Confirmar e enviar cadastro", type="primary", use_container_width=True)
+    if ok:
+        if time.time() - c["enviado"] > CODIGO_VALIDADE_MIN * 60:
+            st.error("O código venceu. Clique em Reenviar código.")
+        elif c["tentativas"] >= CODIGO_TENTATIVAS:
+            st.error("Muitas tentativas erradas. Clique em Reenviar código.")
+        elif not hmac.compare_digest(hashlib.sha256(re.sub(r"\D", "", digitado).encode()).hexdigest(), c["hash"]):
+            c["tentativas"] += 1
+            st.error(f"Código incorreto. Restam {CODIGO_TENTATIVAS - c['tentativas']} tentativa(s).")
+        else:
+            r = V.cadastrar(d, st.context.ip_address)
+            if r.get("erro"):
+                st.error(r["erro"])
+            else:
+                ss.pop("cadastro_codigo", None)
+                ss.cadastro_ok = d["nome"].split()[0]
+                st.rerun()
+    c1, c2 = st.columns(2)
+    if c1.button("Reenviar código", use_container_width=True):
+        r = _mandar_codigo(d)
+        if r.get("erro"):
+            st.error(r["erro"])
+        else:
+            st.success("Enviamos um código novo.")
+    if c2.button("Corrigir meus dados", use_container_width=True):
+        ss.pop("cadastro_codigo", None)
+        st.rerun()
+    st.stop()
+
+
 def tela_cadastro() -> None:
     """Botao "Quero me cadastrar": a pessoa cria o login e aceita os termos; entra so depois da aprovacao."""
     _, meio, _ = st.columns([1, 1.3, 1])
@@ -221,10 +285,13 @@ def tela_cadastro() -> None:
                 ss.tela_cadastro = False
                 st.rerun()
             st.stop()
+        if ss.get("cadastro_codigo"):
+            confirmar_email()
         st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Cadastro de vendedor autônomo · "
                     "comissão de 10% por venda</p>", unsafe_allow_html=True)
         with st.form("cadastro"):
-            nome = st.text_input("Nome completo")
+            nome = st.text_input("Nome completo ou razão social")
+            documento = st.text_input("CPF ou CNPJ", placeholder="só os números ou com pontuação")
             c1, c2 = st.columns(2)
             email = c1.text_input("E-mail")
             celular = c2.text_input("Celular / WhatsApp (com DDD)")
@@ -233,22 +300,26 @@ def tela_cadastro() -> None:
             login = c1.text_input("Login (ex.: maria.souza)")
             senha = c2.text_input("Senha (mín. 8)", type="password")
             senha2 = c2.text_input("Repita a senha", type="password")
-            with st.expander("Ler os Termos do Vendedor Parceiro"):
+            st.markdown("**Nossas políticas: leia antes de aceitar**")
+            with st.container(height=230, border=True):
                 st.markdown(TERMOS)
             aceito = st.checkbox(f"Li e aceito os Termos do Vendedor Parceiro, versão {V.TERMOS_VERSAO}")
-            ok = st.form_submit_button("Enviar cadastro", type="primary", use_container_width=True)
+            ok = st.form_submit_button("Continuar", type="primary", use_container_width=True)
         if ok:
             if not aceito:
                 st.error("Para se cadastrar, marque que leu e aceita os termos.")
             elif senha != senha2:
                 st.error("As senhas não conferem.")
             else:
-                r = V.cadastrar(nome, email, celular, cidade, login, senha, st.context.ip_address)
-                if r.get("erro"):
-                    st.error(r["erro"])
+                d = V.validar_cadastro(nome, documento, email, celular, cidade, login, senha)
+                if d.get("erro"):
+                    st.error(d["erro"])
                 else:
-                    ss.cadastro_ok = nome.strip().split()[0]
-                    st.rerun()
+                    r = _mandar_codigo(d)
+                    if r.get("erro"):
+                        st.error(r["erro"])
+                    else:
+                        st.rerun()
         if st.button("Já tenho login", use_container_width=True):
             ss.tela_cadastro = False
             st.rerun()

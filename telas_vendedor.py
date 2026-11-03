@@ -720,7 +720,10 @@ def pagina_gestao() -> None:
                     c1, c2, c3 = st.columns([5, 1.3, 1.3])
                     tel = p["celular"] or ""
                     tel = f"({tel[:2]}) {tel[2:-4]}-{tel[-4:]}" if len(tel) >= 10 else tel
-                    c1.markdown(f"**{p['nome']}** · `{p['login']}` · {p['cidade'] or ''}  \n"
+                    doc = p["documento"] or ""
+                    doc = (f"CPF {doc[:3]}.{doc[3:6]}.{doc[6:9]}-{doc[9:]}" if len(doc) == 11 else
+                           f"CNPJ {doc[:2]}.{doc[2:5]}.{doc[5:8]}/{doc[8:12]}-{doc[12:]}" if len(doc) == 14 else doc)
+                    c1.markdown(f"**{p['nome']}** · {doc} · `{p['login']}` · {p['cidade'] or ''}  \n"
                                 f"{p['email'] or ''} · {tel}  \n"
                                 f"Cadastro em {br(p['criado_em'])} · aceitou os termos v{p['termos_versao']}")
                     if c2.button("✅ Aprovar", key=f"apr{p['id']}", type="primary"):
