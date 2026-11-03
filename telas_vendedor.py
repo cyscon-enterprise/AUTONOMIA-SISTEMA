@@ -287,14 +287,18 @@ def pagina_discador() -> None:
                       "Depois escolha a campanha e clique em **▶ Começar a ligar**.")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
 
-    st.markdown("#### Chamadas dos seus últimos turnos")
     meus = [x for x in V.turnos_recentes(7) if x["vendedor_id"] == eu()["id"]]
-    if not meus:
-        st.caption("Nenhum turno nos últimos 7 dias.")
-    for x in meus[:10]:
-        fim = f"{x['fim']:%H:%M}" if x["fim"] else "aberto"
-        st.markdown(f"**{x['inicio']:%d/%m %H:%M} → {fim}** · {x['chamadas']} chamada(s) · "
-                    f"{x['carteira']} entraram na carteira")
+    with st.expander("Histórico de chamadas"):
+        if not meus:
+            st.caption("Nenhum turno nos últimos 7 dias.")
+        linhas = []
+        for x in meus[:10]:
+            fim = f"{x['fim']:%H:%M}" if x["fim"] else "aberto"
+            linhas.append(f"<div><b>{x['inicio']:%d/%m %H:%M} → {fim}</b> · {x['chamadas']} chamada(s) · "
+                          f"{x['carteira']} entraram na carteira</div>")
+        if linhas:
+            st.markdown("<div style='font-size:13px;line-height:1.7;color:#344054'>" + "".join(linhas) + "</div>",
+                        unsafe_allow_html=True)
 
 
 def entrar_modo(s3: dict, campanha, manual: bool) -> None:
