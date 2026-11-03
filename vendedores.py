@@ -767,6 +767,10 @@ def na_linha() -> dict | None:
     except tresc.Erro3C:
         return None
     for ch in ativas:
+        # o discador preditivo disca varios numeros ao mesmo tempo: so a chamada ja passada a um atendente
+        # (agent != 0) e a que esta com o vendedor; as outras ainda estao chamando
+        if str(ch.get("agent") or "0") in ("0", ""):
+            continue
         cnpj = _identificador(ch)
         if not cnpj:
             tel = dados.normalizar(ch.get("number") or ch.get("phone"))
