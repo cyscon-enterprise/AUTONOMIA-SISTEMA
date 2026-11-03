@@ -30,6 +30,7 @@ import secrets
 import sqlalchemy as sa
 
 import dados
+import ia_auto
 import tresc3c as tresc
 
 # Qualificacoes da 3C que querem dizer "o vendedor falou com alguem e ha o que trabalhar".
@@ -514,6 +515,7 @@ def sincronizar(forcar: bool = False) -> dict:
     Roda no maximo uma vez por minuto para o site todo (marca em `crm_discador_sync`)."""
     momento = dados.agora()
     cont = {"chamadas": 0, "novas_carteira": 0}
+    para_ia = []                                  # conversas gravadas: resumo automatico depois do commit
     with dados.engine().begin() as conn:
         m = _q(conn, "SELECT * FROM crm_discador_sync WHERE id = 1 FOR UPDATE")
         if m and not forcar and (momento - m[0]["rodou_em"]).total_seconds() < SYNC_INTERVALO_S:
@@ -555,6 +557,14 @@ def sincronizar(forcar: bool = False) -> dict:
                 "ON CONFLICT (chamada_3c) DO UPDATE SET qualificacao = EXCLUDED.qualificacao, "
                 "resultado = EXCLUDED.resultado, duracao = EXCLUDED.duracao, gravada = EXCLUDED.gravada, lido_em = :l"),
                 vals)
+            falou = _segundos(ch.get("speaking_with_agent_time")) or _segundos(ch.get("speaking_time"))
+            if vals["g"] and falou >= CONVERSA_MIN_S:
+                emp = _q(conn, "SELECT nome, nome_fantasia, cidade, estado FROM empresas WHERE cnpj = :c", c=cnpj)
+                e = emp[0] if emp else {}
+                para_ia.append((cid, cnpj, f"Empresa: {e.get('nome_fantasia') or e.get('nome') or cnpj} "
+                                f"({e.get('cidade') or ''}/{e.get('estado') or ''})", t["nome"],
+                                f"Ligação de {quando:%d/%m %H:%M} com {t['nome']} · conversa {vals['d'] or ''} · "
+                                f"{dados.formatar(vals['tel'])}"))
             if motivo and campanha_de_servico(ch.get("campaign")):
                 _para_servicos(conn, cnpj, t, cid, str(ch.get("campaign")))
             if antes and antes[0]["entrou_carteira"]:
@@ -568,6 +578,8 @@ def sincronizar(forcar: bool = False) -> dict:
                              {"c": cid})
                 cont["novas_carteira"] += 1
         _marcar(conn, m, momento, momento)
+    for cid, cnpj, contexto, quem, titulo in para_ia:
+        ia_auto.agendar(cid, cnpj, contexto, quem, titulo, registrar_resumo_ia)
     return cont
 
 
