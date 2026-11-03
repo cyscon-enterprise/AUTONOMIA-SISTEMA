@@ -472,7 +472,8 @@ def motivo_carteira(ch: dict) -> str:
     q = dados._sem_acento(dados._qualificacao_de(ch))
     if q in QUALIF_CARTEIRA:
         return dados._qualificacao_de(ch)
-    if not q and _segundos(ch.get("speaking_time")) >= CONVERSA_MIN_S:
+    # "Nao qualificada" (ou "-") e o que a 3C poe quando ninguem deu a baixa: vale a regra dos 60 s de conversa
+    if q.strip(" -").lower() in ("", "nao qualificada") and _segundos(ch.get("speaking_time")) >= CONVERSA_MIN_S:
         return "a qualificar (conversa sem baixa)"
     return ""
 
