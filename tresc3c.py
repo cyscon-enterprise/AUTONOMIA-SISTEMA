@@ -27,8 +27,45 @@ class Erro3C(RuntimeError):
 _TOKEN = {"v": ""}
 
 
+_RAMAL = {"ramal": "1003", "senha": ""}
+
+
 def configurar(token_servico: str) -> None:
     _TOKEN["v"] = (token_servico or "").strip()
+
+
+def configurar_ramal(ramal: str, senha: str) -> None:
+    """Ramal do discador guardado nos Secrets (TRESC_RAMAL / TRESC_RAMAL_SENHA): o vendedor conecta
+    com um clique, sem ver nem digitar a senha da 3C."""
+    _RAMAL.update(ramal=(ramal or "1003").strip(), senha=senha or "")
+
+
+def ramal_padrao() -> str:
+    return _RAMAL["ramal"]
+
+
+def tem_senha_ramal() -> bool:
+    return bool(_RAMAL["senha"])
+
+
+def autenticar_padrao() -> dict:
+    return autenticar(_RAMAL["ramal"], _RAMAL["senha"])
+
+
+def campanhas_com_contatos() -> set[int]:
+    """Campanhas ativas (nao pausadas) com alguma lista de telefones: as unicas em que o discador tem
+    para quem ligar. Sem resposta da 3C devolve conjunto vazio (a tela entao mostra todas)."""
+    ids = set()
+    try:
+        for c in _lista(_req("GET", "/campaigns", params={"per_page": 100})):
+            if c.get("paused"):
+                continue
+            listas = _lista(_req("GET", f"/campaigns/{c['id']}/lists", params={"per_page": 50}))
+            if any(int(l.get("total") or 0) > 0 and not l.get("paused") for l in listas):
+                ids.add(int(c["id"]))
+    except (Erro3C, ValueError, TypeError, KeyError):
+        return set()
+    return ids
 
 
 def tem_token() -> bool:

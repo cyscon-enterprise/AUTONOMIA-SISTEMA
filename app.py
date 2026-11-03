@@ -7,6 +7,7 @@ Secrets do site (Streamlit > Settings > Secrets):
     APP_SENHA     so para o PRIMEIRO acesso: cria o administrador quando ainda nao ha ninguem
     DATABASE_URL  conexao Postgres do Supabase (pooler, projeto sieqohnzcrjgrhirzocj)
     TRESC_TOKEN   token de servico da 3C Plus
+    TRESC_RAMAL / TRESC_RAMAL_SENHA   ramal do discador: o vendedor conecta sem digitar a senha da 3C
     SMTP_USUARIO / SMTP_SENHA   Gmail remetente + senha de app (codigo de confirmacao do cadastro)
 Rodando no PC sem secrets.toml, cai nas variaveis CYSCON_DATABASE_URL / CYSCON_3C_TOKEN.
 """
@@ -36,7 +37,7 @@ PASTA = os.path.dirname(os.path.abspath(__file__))
 LOGO = os.path.join(PASTA, "static", "logo.png")          # logo e icone feitos no Canva (31/10/2026)
 ICONE = os.path.join(PASTA, "static", "icone.png")
 
-st.set_page_config(page_title="AutonomIA Vendas", page_icon=ICONE, layout="wide")
+st.set_page_config(page_title="AutonomIA Vendas", page_icon=ICONE, layout="wide", initial_sidebar_state="expanded")
 st.logo(LOGO, size="large", icon_image=ICONE)
 
 
@@ -55,6 +56,7 @@ def _segredo(nome: str, *alternativas: str) -> str:
 
 dados.configurar(_segredo("DATABASE_URL", "CYSCON_DATABASE_URL"))
 tresc.configurar(_segredo("TRESC_TOKEN", "CYSCON_3C_TOKEN"))
+tresc.configurar_ramal(_segredo("TRESC_RAMAL") or "1003", _segredo("TRESC_RAMAL_SENHA"))
 ia_ligacoes.configurar(_segredo("ANTHROPIC_API_KEY"))
 email_envio.configurar(_segredo("SMTP_USUARIO"), _segredo("SMTP_SENHA"), _segredo("SMTP_HOST"), _segredo("SMTP_PORTA"))
 
@@ -396,14 +398,27 @@ def escolher_empresa() -> None:
 
 
 if not ss.get("empresa"):
-    escolher_empresa()
+    _emps = V.empresas_parceiras()
+    if len(_emps) == 1:                            # uma empresa so: nao ha o que escolher
+        ss.empresa = {"id": _emps[0]["id"], "nome": _emps[0]["nome"]}
+    else:
+        escolher_empresa()
 
 with st.sidebar:
+    # tudo da 3C fica aqui: o telefone web (WebRTC) fora das paginas nao cai ao trocar de pagina
     if ss.get("sessao3c"):
-        # o telefone web (WebRTC) da 3C: primeiro da barra (a vista) e fora das paginas, para nao cair
         st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")
         components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=360, scrolling=True)
-        st.divider()
+        telas_vendedor.painel_ramal(ss.sessao3c)
+        if st.button("■ Encerrar meu turno", use_container_width=True):
+            with st.spinner("Saindo da 3C e fechando a conta do turno…"):
+                telas_vendedor.sair_3c()
+                telas_vendedor.avisar(V.encerrar_turno(ss.usuario))
+            st.rerun()
+    else:
+        st.markdown("**📞 Telefone**")
+        telas_vendedor.conectar_3c_lateral()
+    st.divider()
     st.markdown(f"**{ss.usuario['nome']}**{' · admin' if ss.usuario.get('admin') else ''}  \n"
                 f"Empresa: **{ss.empresa['nome']}**")
     if len(V.empresas_parceiras()) > 1 and st.button("Trocar de empresa"):
