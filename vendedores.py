@@ -119,7 +119,17 @@ DDL = [
         id INTEGER PRIMARY KEY,
         ate TIMESTAMP NOT NULL,
         rodou_em TIMESTAMP NOT NULL)""",
+    # cadastro aberto (botao "Quero me cadastrar"): fica pendente ate um administrador aprovar
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS email VARCHAR(120)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS celular VARCHAR(11)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS cidade VARCHAR(80)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pendente BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_versao VARCHAR(20)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_aceite_em TIMESTAMP",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_ip VARCHAR(45)",
 ]
+
+TERMOS_VERSAO = "1.0"
 
 
 def preparar() -> None:
@@ -162,13 +172,18 @@ def tem_vendedor() -> bool:
 
 
 def entrar(login: str, senha: str) -> dict | None:
-    """O vendedor (sem o hash) ou None. Mesmo tempo de resposta com login certo ou errado."""
+    """O vendedor (sem o hash) ou None. Mesmo tempo de resposta com login certo ou errado.
+    Cadastro ainda nao aprovado, com a senha certa: {"pendente": True}."""
     with dados.engine().begin() as conn:
-        r = _q(conn, "SELECT * FROM crm_vendedores WHERE login = :l AND ativo", l=_login_ok(login))
+        r = _q(conn, "SELECT * FROM crm_vendedores WHERE login = :l", l=_login_ok(login))
         if not r:
             hash_senha(senha or "")               # gasta o mesmo tempo: nao entrega quais logins existem
             return None
         if not confere(senha or "", r[0]["senha_hash"]):
+            return None
+        if r[0]["pendente"]:
+            return {"pendente": True}
+        if not r[0]["ativo"]:
             return None
         conn.execute(sa.text("UPDATE crm_vendedores SET ultimo_acesso = :a WHERE id = :i"),
                      {"a": dados.agora(), "i": r[0]["id"]})
@@ -206,6 +221,54 @@ def trocar_senha(vendedor_id: int, senha: str) -> dict:
         conn.execute(sa.text("UPDATE crm_vendedores SET senha_hash = :s WHERE id = :i"),
                      {"s": hash_senha(senha), "i": vendedor_id})
     return {"ok": True, "mensagem": "Senha trocada."}
+
+
+def cadastrar(nome: str, email: str, celular: str, cidade: str, login: str, senha: str, ip: str | None) -> dict:
+    """Cadastro aberto: cria o vendedor PENDENTE (nao entra) ate um administrador aprovar.
+    Guarda o aceite dos termos (versao, data e IP), como pede a clausula 8.2 do contrato."""
+    email = (email or "").strip().lower()
+    celular = re.sub(r"\D", "", celular or "")
+    if celular.startswith("55") and len(celular) > 11:
+        celular = celular[2:]
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        return {"erro": "Informe um e-mail válido."}
+    if len(celular) not in (10, 11):
+        return {"erro": "Informe o celular com DDD (ex.: 71 99999-8888)."}
+    if not (cidade or "").strip():
+        return {"erro": "Informe sua cidade."}
+    with dados.engine().connect() as conn:
+        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE lower(email) = :e"), {"e": email}).first():
+            return {"erro": "Já existe um cadastro com esse e-mail."}
+    r = criar(nome, login, senha)
+    if r.get("erro"):
+        return r
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text(
+            "UPDATE crm_vendedores SET ativo = FALSE, pendente = TRUE, email = :e, celular = :c, cidade = :ci, "
+            "termos_versao = :tv, termos_aceite_em = :ta, termos_ip = :ip WHERE login = :l"),
+            {"e": email, "c": celular, "ci": cidade.strip()[:80], "tv": TERMOS_VERSAO, "ta": dados.agora(),
+             "ip": (ip or "")[:45] or None, "l": _login_ok(login)})
+    return {"ok": True}
+
+
+def pendentes() -> list[dict]:
+    with dados.engine().connect() as conn:
+        return _q(conn, "SELECT id, nome, login, email, celular, cidade, criado_em, termos_versao, termos_aceite_em "
+                        "FROM crm_vendedores WHERE pendente ORDER BY criado_em")
+
+
+def aprovar(vendedor_id: int, aprovado: bool) -> dict:
+    """Aprova (passa a entrar como vendedor) ou recusa (apaga o cadastro pendente)."""
+    with dados.engine().begin() as conn:
+        if aprovado:
+            n = conn.execute(sa.text("UPDATE crm_vendedores SET ativo = TRUE, pendente = FALSE "
+                                     "WHERE id = :i AND pendente"), {"i": vendedor_id}).rowcount
+        else:
+            n = conn.execute(sa.text("DELETE FROM crm_vendedores WHERE id = :i AND pendente"),
+                             {"i": vendedor_id}).rowcount
+    if not n:
+        return {"erro": "Esse cadastro já foi analisado."}
+    return {"ok": True, "mensagem": "Cadastro aprovado: já pode entrar." if aprovado else "Cadastro recusado."}
 
 
 def ativar(vendedor_id: int, ativo: bool) -> dict:
@@ -282,7 +345,7 @@ def visao_geral(dias: int = 7) -> dict:
               (SELECT count(*) FROM crm_mv_ligacoes l WHERE l.quem = v.nome AND l.pedido_em >= :desde) AS manuais,
               (SELECT coalesce(sum(extract(epoch FROM coalesce(t.fim, :agora) - t.inicio)), 0) / 3600.0
                  FROM crm_discador_turnos t WHERE t.vendedor_id = v.id AND t.inicio >= :desde) AS horas
-            FROM crm_vendedores v ORDER BY v.ativo DESC, v.nome""",
+            FROM crm_vendedores v WHERE NOT v.pendente ORDER BY v.ativo DESC, v.nome""",
                   desde=desde, agora=agora, agora_txt=agora.isoformat(sep=" ", timespec="minutes"))
         por_dia = _q(conn, """
             SELECT date(quando) AS dia, count(*) AS chamadas, count(*) FILTER (WHERE entrou_carteira) AS carteira
@@ -299,7 +362,7 @@ def lista() -> list[dict]:
     with dados.engine().connect() as conn:
         return _q(conn, "SELECT v.id, v.nome, v.login, v.admin, v.ativo, v.ultimo_acesso, "
                         "(SELECT count(*) FROM crm_carteira c WHERE c.vendedor_id = v.id) AS clientes "
-                        "FROM crm_vendedores v ORDER BY v.ativo DESC, v.nome")
+                        "FROM crm_vendedores v WHERE NOT v.pendente ORDER BY v.ativo DESC, v.nome")
 
 
 # ---------------------------------------------------------------- turno no discador

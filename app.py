@@ -171,14 +171,87 @@ def tela_login() -> None:
             login = st.text_input("Login")
             senha = st.text_input("Senha", type="password")
             ok = st.form_submit_button("Entrar", type="primary", use_container_width=True)
-    if ok:
-        u = V.entrar(login, senha)
-        if u:
-            ss.usuario = u
-            sessao_aba.gravar(u["id"])
+        if ok:
+            u = V.entrar(login, senha)
+            if u and u.get("pendente"):
+                st.info("Seu cadastro está em análise. Você vai poder entrar assim que um administrador aprovar.")
+                st.stop()
+            if u:
+                ss.usuario = u
+                sessao_aba.gravar(u["id"])
+                st.rerun()
+            time.sleep(1)
+            st.error("Login ou senha incorretos.")
+        st.markdown("<p style='text-align:center;color:#5b6b85;margin:14px 0 4px'>Ainda não tem acesso?</p>",
+                    unsafe_allow_html=True)
+        if st.button("Quero me cadastrar como vendedor", use_container_width=True):
+            ss.tela_cadastro = True
             st.rerun()
-        time.sleep(1)
-        st.error("Login ou senha incorretos.")
+    st.stop()
+
+
+TERMOS = f"""**Termos do Vendedor Parceiro · versão {V.TERMOS_VERSAO}**
+
+- Você trabalha como **autônomo, sem vínculo empregatício**: escolhe se, quando e quanto tempo usa a plataforma. \
+Não há horário, metas nem exclusividade.
+- Você recebe **10% de comissão** sobre o valor líquido efetivamente pago pelo cliente em cada venda de lead da sua \
+carteira. Não há salário, ajuda de custo nem outros pagamentos.
+- A empresa entra na sua carteira quando a ligação feita por você termina em Retornar, Enviar e-mail, Agendar reunião \
+ou Ganho, ou quando a conversa dura 60 segundos ou mais.
+- Se você ficar **90 dias sem ligar** (nem tentativa) para um lead da sua carteira, perde o direito sobre ele.
+- **Todas as ligações são gravadas** e podem ser transcritas e resumidas por IA, para comprovar a carteira e \
+qualificar os leads.
+- Os dados dos leads são da plataforma (LGPD): é proibido copiar, exportar ou usar esses dados fora dela.
+- Você usa seu próprio computador, internet e fone, e cuida dos seus tributos.
+- O acesso é pessoal: não compartilhe seu login.
+"""
+
+
+def tela_cadastro() -> None:
+    """Botao "Quero me cadastrar": a pessoa cria o login e aceita os termos; entra so depois da aprovacao."""
+    _, meio, _ = st.columns([1, 1.3, 1])
+    with meio:
+        st.write("")
+        st.image(LOGO, use_container_width=True)
+        if ss.get("cadastro_ok"):
+            st.success(f"Cadastro enviado, {ss.cadastro_ok}! Um administrador vai analisar e liberar seu acesso. "
+                       "Depois é só entrar com o login e a senha que você criou.")
+            if st.button("Voltar para o login", type="primary", use_container_width=True):
+                ss.pop("cadastro_ok", None)
+                ss.tela_cadastro = False
+                st.rerun()
+            st.stop()
+        st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Cadastro de vendedor autônomo · "
+                    "comissão de 10% por venda</p>", unsafe_allow_html=True)
+        with st.form("cadastro"):
+            nome = st.text_input("Nome completo")
+            c1, c2 = st.columns(2)
+            email = c1.text_input("E-mail")
+            celular = c2.text_input("Celular / WhatsApp (com DDD)")
+            cidade = st.text_input("Cidade / UF")
+            c1, c2 = st.columns(2)
+            login = c1.text_input("Login (ex.: maria.souza)")
+            senha = c2.text_input("Senha (mín. 8)", type="password")
+            senha2 = c2.text_input("Repita a senha", type="password")
+            with st.expander("Ler os Termos do Vendedor Parceiro"):
+                st.markdown(TERMOS)
+            aceito = st.checkbox(f"Li e aceito os Termos do Vendedor Parceiro, versão {V.TERMOS_VERSAO}")
+            ok = st.form_submit_button("Enviar cadastro", type="primary", use_container_width=True)
+        if ok:
+            if not aceito:
+                st.error("Para se cadastrar, marque que leu e aceita os termos.")
+            elif senha != senha2:
+                st.error("As senhas não conferem.")
+            else:
+                r = V.cadastrar(nome, email, celular, cidade, login, senha, st.context.ip_address)
+                if r.get("erro"):
+                    st.error(r["erro"])
+                else:
+                    ss.cadastro_ok = nome.strip().split()[0]
+                    st.rerun()
+        if st.button("Já tenho login", use_container_width=True):
+            ss.tela_cadastro = False
+            st.rerun()
     st.stop()
 
 
@@ -203,6 +276,8 @@ if not ss.usuario:
 if not ss.usuario:
     if not V.tem_vendedor():
         primeiro_acesso()
+    if ss.get("tela_cadastro"):
+        tela_cadastro()
     tela_login()
 
 sessao_aba.escrever_na_aba()

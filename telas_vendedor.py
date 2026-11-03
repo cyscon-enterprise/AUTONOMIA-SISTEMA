@@ -698,7 +698,9 @@ def pagina_visao_geral() -> None:
 def pagina_gestao() -> None:
     mostrar_msg()
     faixa("⚙", "Gestão", "Vendedores e turnos do discador")
-    a_vend, a_turnos, a_ia = st.tabs(["Vendedores", "Turnos do discador", "IA (resumo das ligações)"])
+    fila = V.pendentes()
+    a_vend, a_turnos, a_ia = st.tabs([f"Vendedores{f' · {len(fila)} cadastro(s) novo(s)' if fila else ''}",
+                                      "Turnos do discador", "IA (resumo das ligações)"])
     with a_ia:
         if ia_ligacoes.tem_chave():
             st.success("Chave da Anthropic configurada: o botão 🧠 Transcrever e resumir já funciona.")
@@ -711,6 +713,23 @@ def pagina_gestao() -> None:
                 st.rerun()
         st.caption("No site publicado, a chave fica nos Secrets do Streamlit (ANTHROPIC_API_KEY).")
     with a_vend:
+        if fila:
+            st.markdown("#### Cadastros aguardando aprovação")
+            for p in fila:
+                with st.container(border=True):
+                    c1, c2, c3 = st.columns([5, 1.3, 1.3])
+                    tel = p["celular"] or ""
+                    tel = f"({tel[:2]}) {tel[2:-4]}-{tel[-4:]}" if len(tel) >= 10 else tel
+                    c1.markdown(f"**{p['nome']}** · `{p['login']}` · {p['cidade'] or ''}  \n"
+                                f"{p['email'] or ''} · {tel}  \n"
+                                f"Cadastro em {br(p['criado_em'])} · aceitou os termos v{p['termos_versao']}")
+                    if c2.button("✅ Aprovar", key=f"apr{p['id']}", type="primary"):
+                        avisar(V.aprovar(p["id"], True))
+                        st.rerun()
+                    if c3.button("Recusar", key=f"rec{p['id']}"):
+                        avisar(V.aprovar(p["id"], False))
+                        st.rerun()
+            st.markdown("#### Vendedores")
         for v in V.lista():
             with st.container(border=True):
                 c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
