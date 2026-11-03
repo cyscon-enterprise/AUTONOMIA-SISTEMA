@@ -335,8 +335,10 @@ def painel_ramal(s3: dict) -> None:
     """Barra lateral, com o telefone conectado: estado do ramal, campanha e Comecar/Parar de ligar."""
     status = tresc.status_ramal(s3["ramal"])
     rotulo = tresc.STATUS_AGENTE.get(status, f"status {status}") if status is not None else "sem resposta da 3C"
-    cor = {0: "#b42318", 1: "#1a7f4b", 2: "#1565c0", 3: "#d97706"}.get(status, "#8a94a6")
-    st.markdown(f"<span class='ponto' style='background:{cor}'></span>**{rotulo.capitalize()}**",
+    if status == 0:                                     # o telefone web registrou, mas o ramal ainda nao esta na campanha
+        rotulo = "telefone pronto · clique em Começar a ligar"
+    cor = {0: "#d97706", 1: "#1a7f4b", 2: "#1565c0", 3: "#d97706"}.get(status, "#8a94a6")
+    st.markdown(f"<span class='ponto' style='background:{cor}'></span>**{rotulo[0].upper() + rotulo[1:]}**",
                 unsafe_allow_html=True)
     if not status:                                      # fora da campanha
         lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
