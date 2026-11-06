@@ -434,15 +434,20 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
                            f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
                            unsafe_allow_html=True)
             k = _k(n, onde)
-            if not ss.get(f"desligada{k}"):
+            s3 = ss.get("sessao3c") or {}
+            em_andamento = (not ss.get(f"desligada{k}") and bool(s3)
+                            and tresc.status_ramal(s3["ramal"]) == 2)      # 2 = em ligacao na 3C
+            if em_andamento:
                 if c_desl.button("📴 Desligar", key=f"desl{k}", type="primary", use_container_width=True):
                     try:
-                        tresc.desligar(n["id"], ss.get("sessao3c"))
-                        ss[f"desligada{k}"] = True
-                        ss.ultima_chamada = n                  # o cartao fica para a qualificacao
-                        st.rerun(scope="fragment")             # Discador e pop-up sao fragmentos
+                        tresc.desligar(n["id"], s3)
                     except tresc.Erro3C as e:
-                        st.error(f"3C: {e}")
+                        if "404" not in str(e):                # 404 = a chamada ja acabou: so segue para a qualificacao
+                            st.error(f"3C: {e}")
+                            return
+                    ss[f"desligada{k}"] = True
+                    ss.ultima_chamada = n                      # o cartao fica para a qualificacao
+                    st.rerun(scope="fragment")                 # Discador e pop-up sao fragmentos
             else:
                 st.markdown("<div style='background:#FFF4E5;border:1px solid #F0A350;border-radius:8px;padding:6px 12px;"
                             "margin:2px 0 10px;font-weight:600;color:#7a3e00'>📴 Ligação encerrada: qualifique a chamada "
