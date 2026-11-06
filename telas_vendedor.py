@@ -36,10 +36,17 @@ def mostrar_msg() -> None:
         ss.msg = None
 
 
-def faixa(icone: str, titulo: str, sub: str = "") -> None:
-    """Cabecalho das paginas: faixa azul com titulo e subtitulo."""
-    st.markdown(f"<div class='faixa'><div style='font-size:26px'>{icone}</div><div><b>{titulo}</b><br>"
-                f"<span>{sub}</span></div></div>", unsafe_allow_html=True)
+def faixa(icone: str, titulo: str, sub: str = "", numeros: list[tuple[str, object]] | None = None) -> None:
+    """Cabecalho das paginas: UMA linha fina azul com o titulo, o subtitulo e os numeros da pagina."""
+    nums = "".join(f"<span style='margin-left:24px;color:#B9C8E6;font-size:13px'>{html.escape(str(r))} "
+                   f"<b style='color:#FFFFFF;font-size:16px;margin-left:4px'>{html.escape(str(v))}</b></span>"
+                   for r, v in (numeros or []))
+    st.markdown(
+        "<div style='background:linear-gradient(90deg,#0F2A5C,#1565C0);border-radius:10px;padding:4px 16px;"
+        "margin:-6px 0 10px;display:flex;align-items:center;flex-wrap:wrap;color:#F6F8FC'>"
+        f"<span style='font-size:15px;font-weight:700'>{icone} {titulo}</span>"
+        f"<span style='margin-left:12px;color:#DCE6F7;font-size:13px'>{sub}</span>"
+        f"<span style='flex:1'></span>{nums}</div>", unsafe_allow_html=True)
 
 
 def kpi(col, rotulo: str, valor) -> None:
@@ -239,18 +246,8 @@ def sair_3c() -> None:
 
 
 def faixa_turno(inicio, chamadas: int, novos: int, carteira: int) -> None:
-    """Uma linha so, fina: o turno e os tres numeros (no lugar da faixa grande + cartoes)."""
-    def num(rotulo, valor):
-        return (f"<span style='margin-left:24px;color:#B9C8E6;font-size:13px'>{rotulo} "
-                f"<b style='color:#FFFFFF;font-size:16px;margin-left:4px'>{valor}</b></span>")
-    st.markdown(
-        "<div style='background:linear-gradient(90deg,#0F2A5C,#1565C0);border-radius:10px;padding:4px 16px;margin-top:-6px;"
-        "display:flex;align-items:center;flex-wrap:wrap;color:#F6F8FC'>"
-        f"<span style='font-size:15px;font-weight:700'>📞 Discador</span>"
-        f"<span style='margin-left:12px;color:#DCE6F7;font-size:13px'>turno aberto desde {inicio:%H:%M}</span>"
-        "<span style='flex:1'></span>"
-        + num("Chamadas no turno", chamadas) + num("Entraram na carteira", novos) + num("Minha carteira", carteira)
-        + "</div>", unsafe_allow_html=True)
+    faixa("📞", "Discador", f"turno aberto desde {inicio:%H:%M}",
+          [("Chamadas no turno", chamadas), ("Entraram na carteira", novos), ("Minha carteira", carteira)])
 
 
 def quadro_espera(titulo: str, texto: str) -> None:
@@ -533,14 +530,11 @@ def _carteira(todos: bool) -> None:
         ficha_cliente(ss.cliente)
         return
     lista = V.carteira(None if todos else eu()["id"])
-    faixa("👥" if todos else "📇", "Carteiras de todos os vendedores" if todos else "Minha carteira",
-          "Clientes com quem o time já falou" if todos else "Clientes com quem você falou pelo discador")
-    k = st.columns(3)
     hoje = dados.agora().date().isoformat()
-    kpi(k[0], "Clientes", len(lista))
-    kpi(k[1], "Retornos hoje", sum(1 for l in lista if (l["proximo_contato"] or "")[:10] == hoje))
-    kpi(k[2], "Atrasados", sum(1 for l in lista if l["atrasado"]))
-    st.write("")
+    faixa("👥" if todos else "📇", "Carteiras de todos os vendedores" if todos else "Minha carteira",
+          "clientes com quem o time já falou" if todos else "clientes com quem você falou pelo discador",
+          [("Clientes", len(lista)), ("Retornos hoje", sum(1 for l in lista if (l["proximo_contato"] or "")[:10] == hoje)),
+           ("Atrasados", sum(1 for l in lista if l["atrasado"]))])
     c1, c2 = st.columns([3, 1])
     busca = c1.text_input("Buscar empresa, CNPJ ou cidade", label_visibility="collapsed",
                           placeholder="Buscar empresa, CNPJ ou cidade")
@@ -588,6 +582,7 @@ def cartao(l: dict, onde: str) -> None:
                     unsafe_allow_html=True)
         if st.button("Abrir", key=f"cli{onde}{l['cnpj']}", use_container_width=True):
             ss.cliente = l["cnpj"]
+            st.query_params["ficha"] = "1"
             st.rerun()
 
 
@@ -595,6 +590,7 @@ def ficha_cliente(cnpj: str) -> None:
     f = V.ficha(cnpj)
     if st.button("← voltar à carteira"):
         ss.cliente = None
+        st.query_params.pop("ficha", None)
         st.rerun()
     if not f:
         st.error("Empresa não encontrada na mestra.")
@@ -709,6 +705,7 @@ def ficha_cliente(cnpj: str) -> None:
             if st.button("Transferir", use_container_width=True):
                 avisar(V.transferir(eu(), cnpj, op[alvo]))
                 ss.cliente = None
+                st.query_params.pop("ficha", None)
                 st.rerun()
 
 
@@ -753,6 +750,7 @@ def pagina_funil_servicos() -> None:
     if r.abrir and r.abrir.get("n") != ss.get("kbs_ultimo"):
         ss.kbs_ultimo = r.abrir["n"]
         ss.cliente = str(r.abrir["id"])
+        st.query_params["ficha"] = "1"
         st.rerun()
 
 
@@ -768,17 +766,12 @@ def pagina_visao_geral() -> None:
                                 label_visibility="collapsed") or 7
     g = V.visao_geral(dias)
     q = dados.quadro()
-    faixa("📊", "Visão geral · AutonomIA Vendas", f"Últimos {dias} dia(s) · atualizado {dados.agora():%d/%m %H:%M}")
-
     vend = [v for v in g["vendedores"] if v["ativo"] and not v["admin"]]
     t = g["turno"]
-    k = st.columns(5)
-    kpi(k[0], "Discador agora", t["nome"] if t else "livre")
-    kpi(k[1], "Chamadas hoje", g["chamadas_hoje"])
-    kpi(k[2], f"Chamadas ({dias}d)", sum(v["chamadas"] for v in g["vendedores"]))
-    kpi(k[3], f"Novos na carteira ({dias}d)", sum(v["novos"] for v in g["vendedores"]))
-    kpi(k[4], "Vendedores ativos", len(vend))
-    st.write("")
+    faixa("📊", "Visão geral", f"últimos {dias} dia(s) · atualizado {dados.agora():%d/%m %H:%M}",
+          [("Discador agora", t["nome"] if t else "livre"), ("Chamadas hoje", g["chamadas_hoje"]),
+           (f"Chamadas ({dias}d)", sum(v["chamadas"] for v in g["vendedores"])),
+           (f"Novos na carteira ({dias}d)", sum(v["novos"] for v in g["vendedores"])), ("Vendedores ativos", len(vend))])
 
     esq, dir_ = st.columns([1, 1], gap="large")
     with esq:

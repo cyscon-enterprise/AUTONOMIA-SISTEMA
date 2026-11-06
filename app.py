@@ -106,7 +106,8 @@ h1{font-size:2rem !important}
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px}
 .cart-linha{color:#5b6b85;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:3px 0}
 /* barra lateral estreita: sobra tela para o kanban */
-section[data-testid="stSidebar"]{width:240px !important;min-width:240px !important;max-width:240px !important}
+/* largura fixa so com a barra ABERTA: fechada, ela some e a pagina ocupa a tela toda */
+section[data-testid="stSidebar"][aria-expanded="true"]{width:240px !important;min-width:240px !important;max-width:240px !important}
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"]{padding-left:.9rem;padding-right:.9rem}
 .ponto{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>""", unsafe_allow_html=True)
@@ -445,4 +446,27 @@ if admin:
                        default=True)] + paginas + [
         st.Page(telas_vendedor.pagina_carteiras_todos, title="Carteiras (todos)", icon="👥", url_path="carteiras"),
         st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
-st.navigation(paginas, position="top").run()             # menu no topo: a barra fica so para o telefone
+# clicar na aba em que ja se esta nao recarrega a pagina no Streamlit: este ouvinte avisa o servidor
+_NAV_JS = """
+export default function(component) {
+  const { setTriggerValue } = component;
+  if (window.__navFicha) { window.__navFicha.set = setTriggerValue; return; }
+  window.__navFicha = { set: setTriggerValue };
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-testid="stTopNavLink"]');
+    if (a && new URL(a.href).pathname === location.pathname) window.__navFicha.set('mesma', Date.now());
+  }, true);
+}
+"""
+_nav = st.components.v2.component("nav_ficha", js=_NAV_JS)
+if _nav(key="nav_ficha", on_mesma_change=lambda: None).mesma:
+    st.query_params.pop("ficha", None)
+
+pg = st.navigation(paginas, position="top")                # menu no topo: a barra fica so para o telefone
+# clicar numa aba do menu abre a LISTA dela, nao o cliente que estava aberto antes. O cliente aberto deixa a marca
+# ?ficha na URL; o menu navega sem ela (mesmo clicando na aba em que ja se esta) e isso fecha a ficha.
+if ss.get("_pagina") != pg.url_path or "ficha" not in st.query_params:
+    ss.cliente = None
+    ss.lead = None
+ss._pagina = pg.url_path
+pg.run()

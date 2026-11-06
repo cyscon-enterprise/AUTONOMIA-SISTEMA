@@ -144,6 +144,7 @@ def ver_ficha(lead_id: int) -> None:
     if not f:
         st.error("Lead não encontrado.")
         ss.lead = None
+        st.query_params.pop("ficha", None)
         return
     if any(l["status"] in ("pedindo", "pedida", "incerta") for l in f["ligacoes"]):
         dados.sincronizar(lead_id)                 # traz o resultado assim que a 3C tiver
@@ -151,6 +152,7 @@ def ver_ficha(lead_id: int) -> None:
     L, est = f["lead"], f["estado"]
     if st.button("← voltar ao funil"):
         ss.lead = None
+        st.query_params.pop("ficha", None)
         st.rerun()
     st.markdown(f"## {L.get('nome_fantasia') or L.get('razao_social') or ''}")
     st.markdown(f"{est.get('etapa') or ''} · {selo(f['grupo'])}", unsafe_allow_html=True)
@@ -276,6 +278,7 @@ def cartao(c: dict, onde: str = "f") -> None:
                     unsafe_allow_html=True)
         if st.button("Abrir", key=f"abrir{onde}{c['id']}", use_container_width=True):
             ss.lead = c["id"]
+            st.query_params["ficha"] = "1"
             st.rerun()
 
 
@@ -313,6 +316,7 @@ def kanban(etapas: list[dict], cards: list[dict]) -> None:
     if r.abrir and r.abrir.get("n") != ss.get("kb_ultimo"):
         ss.kb_ultimo = r.abrir["n"]
         ss.lead = int(r.abrir["id"])
+        st.query_params["ficha"] = "1"
         st.rerun()
 
 
