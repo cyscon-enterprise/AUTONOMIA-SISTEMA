@@ -505,19 +505,24 @@ def baixa_na_tela(n: dict) -> None:
     st.markdown("<style>.st-key-baixa button{min-height:44px;padding:4px 8px}"
                 ".st-key-baixa button p{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;"
                 "line-height:1.2}</style>", unsafe_allow_html=True)
+    # as que poem o cliente na carteira primeiro (Retornar no topo); depois as demais, na ordem da 3C
+    primeiro = ["retornar", "enviar e-mail", "agendar reuniao", "agendar reunião", "ganho"]
+    quals = sorted(quals, key=lambda q: (primeiro.index(q["nome"].strip().lower())
+                                         if q["nome"].strip().lower() in primeiro else len(primeiro)))
     caixa = st.container(key="baixa")
     cols = caixa.columns(min(len(quals), 3) or 1)
     for i, q in enumerate(quals):
         if cols[i % len(cols)].button(q["nome"], key=f"q{n['id']}{q['id']}", use_container_width=True):
             ret = f"{d.isoformat()} {h:%H:%M}" if d else None
             try:
-                tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
+                with st.spinner(f"Dando a baixa: {q['nome']}…"):
+                    tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
                 if (nota or "").strip():
                     _salvar_postit(n, q["nome"])
                 ss.pop("ultima_chamada", None)
                 ss.setdefault("baixadas", set()).add(n["id"])      # some do quadro ja: volta ao "Aguardando chamada"
-                V.sincronizar(forcar=True)
-                ss.msg = ("ok", f"Baixa dada: {q['nome']}.")
+                st.toast(f"✅ Baixa dada: {q['nome']}", icon="✅")     # aparece na hora, mesmo com a tela recarregando
+                ss.msg = ("ok", f"Baixa dada: {q['nome']}. Aguardando a próxima chamada.")
                 st.rerun()
             except tresc.Erro3C as e:
                 st.error(f"3C: {e}")
