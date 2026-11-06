@@ -411,13 +411,13 @@ def painel_na_linha() -> None:
         cartao_ligacao(n)
 
 
-def cartao_ligacao(n: dict) -> None:
+def cartao_ligacao(n: dict, onde: str = "tela") -> None:
     """Tudo da ligacao atendida: empresa, numero discado, post-it, baixa, insight, dados e contatos anteriores."""
     if True:
         f = V.ficha(n["cnpj"])
         if not f:
             st.caption(f"CNPJ {n['cnpj']} não está na mestra.")
-            baixa_na_tela(n)
+            baixa_na_tela(n, onde)
             return
         e = f["empresa"]
         st.markdown(f"### {e.get('nome_fantasia') or e.get('nome')}")
@@ -432,7 +432,7 @@ def cartao_ligacao(n: dict) -> None:
                         f"padding:3px 12px;margin:0 0 8px;font-size:15px;font-weight:600;color:#14532d'>📞 Número discado: "
                         f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
                         unsafe_allow_html=True)
-            baixa_na_tela(n)
+            baixa_na_tela(n, onde)
         with dir_:
             # tudo do cliente, na hora em que ele atende: insight, faturamento, porte, contatos, historico
             st.markdown("#### Insight")
@@ -459,7 +459,7 @@ def cartao_ligacao(n: dict) -> None:
 @st.dialog("📞 Ligação atendida", width="large")
 def popup_ligacao(n: dict) -> None:
     """Abre por cima de qualquer aba quando o discador passa uma ligacao e o vendedor nao esta no Discador."""
-    cartao_ligacao(n)
+    cartao_ligacao(n, "pop")
 
 
 def ligacao_nova_fora_do_discador() -> None:
@@ -490,9 +490,10 @@ CAMPOS_NA_LINHA = [
 ]
 
 
-def _salvar_postit(n: dict, qualif: str = "") -> None:
+def _salvar_postit(n: dict, qualif: str = "", k: str = "") -> None:
     """Grava o post-it no historico assim que o vendedor sai da caixa (e de novo na baixa, com a qualificacao)."""
-    texto = (ss.get(f"nota{n['id']}") or "").strip()
+    k = k or _k(n, "tela")
+    texto = (ss.get(f"nota{k}") or "").strip()
     if not texto:
         return
     onde = ", ".join(x for x in (qualif, dados.formatar(n.get("telefone"))) if x)
@@ -504,7 +505,12 @@ def _salvar_postit(n: dict, qualif: str = "") -> None:
         ss[f"nota_contatos{n['id']}"] = ss.get(f"nota_contatos{n['id']}", []) + novos
 
 
-def baixa_na_tela(n: dict) -> None:
+def _k(n: dict, onde: str) -> str:
+    """Sufixo unico das chaves do cartao: a ligacao + onde ele esta (aba Discador ou pop-up)."""
+    return f"{onde}_{re.sub(r'[^A-Za-z0-9]', '', str(n.get('id') or ''))}"
+
+
+def baixa_na_tela(n: dict, onde: str = "tela") -> None:
     """Qualifica a chamada na 3C daqui mesmo; a sincronizacao leva o cliente para a carteira."""
     if not n.get("id"):
         return
@@ -514,38 +520,39 @@ def baixa_na_tela(n: dict) -> None:
         st.caption(f"3C: {e}")
         return
     # post-it amarelo: para anotar DURANTE a conversa; vai para o historico do lead ao dar a baixa
-    st.markdown("<style>.st-key-postit textarea{background:#FFF59D !important;color:#3b3200 !important;"
+    st.markdown("<style>[class*='st-key-postit_'] textarea{background:#FFF59D !important;color:#3b3200 !important;"
                 "font-size:17px !important;line-height:1.5 !important;border:1px solid #E6D96A !important;"
                 "box-shadow:2px 3px 8px rgba(120,100,0,.18)}</style>", unsafe_allow_html=True)
-    with st.container(key="postit"):
-        nota = st.text_area("📝 Anotações da ligação · salvam sozinhas no histórico", key=f"nota{n['id']}", height=150,
+    k = _k(n, onde)
+    with st.container(key=f"postit_{k}"):
+        nota = st.text_area("📝 Anotações da ligação · salvam sozinhas no histórico", key=f"nota{k}", height=150,
                             placeholder="Anote aqui durante a conversa: nome, cargo, ramal, sistema atual, próximo passo…",
-                            on_change=_salvar_postit, args=(n,))
+                            on_change=_salvar_postit, args=(n, "", k))
         if ss.get(f"nota_hist{n['id']}"):
             extra = ss.get(f"nota_contatos{n['id']}")
             st.caption("✓ salvo no histórico do lead" + (f" · incluído nos contatos: {'; '.join(extra)}" if extra else ""))
     st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
-    d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
-    h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{n['id']}")
+    d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{k}")
+    h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{k}")
     # nomes inteiros nos botoes: 3 por linha, letra um pouco menor e quebra de linha em vez de "..."
-    st.markdown("<style>.st-key-baixa button{min-height:44px;padding:4px 8px}"
-                ".st-key-baixa button p{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;"
+    st.markdown("<style>[class*='st-key-baixa_'] button{min-height:44px;padding:4px 8px}"
+                "[class*='st-key-baixa_'] button p{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;"
                 "line-height:1.2}</style>", unsafe_allow_html=True)
     # as que poem o cliente na carteira primeiro (Retornar no topo); depois as demais, na ordem da 3C
     primeiro = ["retornar", "enviar e-mail", "agendar reuniao", "agendar reunião", "ganho"]
     quals = sorted(quals, key=lambda q: (primeiro.index(q["nome"].strip().lower())
                                          if q["nome"].strip().lower() in primeiro else len(primeiro)))
-    caixa = st.container(key="baixa")
+    caixa = st.container(key=f"baixa_{k}")
     cols = caixa.columns(min(len(quals), 3) or 1)
     for i, q in enumerate(quals):
-        if cols[i % len(cols)].button(q["nome"], key=f"q{n['id']}{q['id']}", use_container_width=True):
+        if cols[i % len(cols)].button(q["nome"], key=f"q{k}_{q['id']}", use_container_width=True):
             ret = f"{d.isoformat()} {h:%H:%M}" if d else None
             try:
                 with st.spinner(f"Dando a baixa: {q['nome']}…"):
                     tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
                 if (nota or "").strip():
-                    _salvar_postit(n, q["nome"])
+                    _salvar_postit(n, q["nome"], k)
                 ss.pop("ultima_chamada", None)
                 ss.setdefault("baixadas", set()).add(n["id"])      # some do quadro ja: volta ao "Aguardando chamada"
                 st.toast(f"✅ Baixa dada: {q['nome']}", icon="✅")     # aparece na hora, mesmo com a tela recarregando
