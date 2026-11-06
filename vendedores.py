@@ -730,7 +730,7 @@ def insight(cnpj: str) -> str:
                                      "AND coalesce(insights_abordagem_cyscon, '') <> '' LIMIT 1"), {"c": cnpj}).scalar()
             if r:
                 return str(r)
-    return ""
+    return ia_auto.ia_ligacoes.insight_salvo(cnpj)       # o feito pela IA na hora da ligacao
 
 
 def anotacoes_recentes(cnpj: str, horas: int = 2) -> str:

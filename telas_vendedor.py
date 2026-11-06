@@ -457,9 +457,18 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
             # tudo do cliente, na hora em que ele atende: insight, faturamento, porte, contatos, historico
             st.markdown("#### Insight")
             ins = V.insight(n["cnpj"])
-            st.markdown(f'<div class="insight">{html.escape(ins)}</div>' if ins else
-                        '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
-                        unsafe_allow_html=True)
+            if not ins and ia_ligacoes.tem_chave():     # sem pesquisa: a IA monta um com os dados da empresa
+                import ia_auto
+                cadastro = "\n".join(f"{rot}: {e.get(col)}" for col, rot in
+                                     CAMPOS_NA_LINHA + [("historico", "Histórico no CRM")] if e.get(col))
+                contatos = "\n".join(f"{br(h['quando'])} {h.get('texto') or ''}" for h in f["historico"][:6])
+                ia_auto.preparar_insight(n["cnpj"], f"{cadastro}\n\nÚltimos contatos:\n{contatos}")
+                st.markdown('<div class="insight" style="color:#5b6b85">🧠 Preparando o insight desta empresa… '
+                            'aparece aqui em alguns segundos.</div>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<div class="insight">{html.escape(ins)}</div>' if ins else
+                            '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
+                            unsafe_allow_html=True)
             st.markdown("#### Dados da empresa")
             with st.container(border=True):
                 dados_compactos(CAMPOS_NA_LINHA, e)

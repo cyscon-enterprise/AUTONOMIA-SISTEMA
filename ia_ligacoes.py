@@ -93,9 +93,49 @@ def tem_chave() -> bool:
     return bool(_CLIENTE.get("chave") or os.environ.get("ANTHROPIC_API_KEY"))
 
 
+DDL_INSIGHT = """CREATE TABLE IF NOT EXISTS crm_insights (
+    cnpj VARCHAR(14) PRIMARY KEY,
+    texto TEXT NOT NULL,
+    modelo VARCHAR(60),
+    criado_em TIMESTAMP NOT NULL)"""
+
+SISTEMA_INSIGHT = """Você prepara um vendedor da Cyscon (revenda TOTVS de ERP e sistemas de gestão) para a ligação que ele está fazendo AGORA com uma empresa. Recebe os dados cadastrais e o histórico dessa empresa.
+
+Escreva um insight de abordagem em português do Brasil, em no máximo 5 frases curtas, só com o que os dados mostram: o que a empresa faz e o porte; a relação com a TOTVS (se é cliente, qual ERP, base, MRR, entidade); um gancho ou necessidade provável para a conversa; e uma sugestão de abertura. Não invente números, nomes nem fatos que não estejam nos dados. Sem título, sem lista, sem markdown."""
+
+
 def preparar() -> None:
     with dados.engine().begin() as conn:
         conn.execute(sa.text(DDL))
+        conn.execute(sa.text(DDL_INSIGHT))
+
+
+def insight_salvo(cnpj: str) -> str:
+    with dados.engine().connect() as conn:
+        return conn.execute(sa.text("SELECT texto FROM crm_insights WHERE cnpj = :c"), {"c": cnpj}).scalar() or ""
+
+
+def gerar_insight(cnpj: str, dados_empresa: str) -> str:
+    """Insight de abordagem feito pela IA a partir dos dados da empresa; guardado para as proximas ligacoes."""
+    try:
+        r = _claude().beta.messages.create(
+            model=MODELO_CLAUDE,
+            max_tokens=1500,
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            output_config={"effort": "low"},
+            system=SISTEMA_INSIGHT,
+            messages=[{"role": "user", "content": dados_empresa}],
+        )
+    except anthropic.APIError as e:
+        raise ErroIA(f"não consegui gerar o insight: {type(e).__name__}") from None
+    texto = "\n".join(b.text for b in r.content if b.type == "text").strip()
+    if texto:
+        with dados.engine().begin() as conn:
+            conn.execute(sa.text("INSERT INTO crm_insights (cnpj, texto, modelo, criado_em) VALUES (:c, :t, :m, :a) "
+                                 "ON CONFLICT (cnpj) DO UPDATE SET texto = EXCLUDED.texto, criado_em = EXCLUDED.criado_em"),
+                         {"c": cnpj, "t": texto, "m": MODELO_CLAUDE, "a": dados.agora()})
+    return texto
 
 
 def _claude() -> anthropic.Anthropic:

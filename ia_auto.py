@@ -54,3 +54,29 @@ def _trabalhar(chamada_3c, cnpj, contexto, quem, titulo, salvar, anotacoes) -> N
     finally:
         with _trava:
             _rodando.discard(chamada_3c)
+
+
+_insight_rodando: set[str] = set()
+
+
+def preparar_insight(cnpj: str, dados_empresa: str) -> bool:
+    """Gera o insight da empresa em segundo plano (uma vez): a tela mostra "preparando" e atualiza sozinha."""
+    if not ia_ligacoes.tem_chave():
+        return False
+    with _trava:
+        if cnpj in _insight_rodando or _falhas.get("ins" + cnpj, 0) >= TENTATIVAS:
+            return False
+        _insight_rodando.add(cnpj)
+
+    def _rodar():
+        try:
+            ia_ligacoes.gerar_insight(cnpj, dados_empresa)
+        except Exception as e:
+            with _trava:
+                _falhas["ins" + cnpj] = _falhas.get("ins" + cnpj, 0) + 1
+            print(f"[ia_auto] insight {cnpj}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+        finally:
+            with _trava:
+                _insight_rodando.discard(cnpj)
+    threading.Thread(target=_rodar, daemon=True, name=f"ins-{cnpj}").start()
+    return True
