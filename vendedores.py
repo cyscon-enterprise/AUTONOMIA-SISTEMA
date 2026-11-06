@@ -740,6 +740,40 @@ def anotacoes_recentes(cnpj: str, horas: int = 2) -> str:
     return "\n".join(x["texto"] for x in r)
 
 
+_TEL_NO_TEXTO = re.compile(r"(?<![\d@])(?:\(?0?(\d{2})\)?[\s.-]*)?(9?\d{4})[\s.-]?(\d{4})(?![\d@])")
+_EMAIL_NO_TEXTO = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+
+
+def contatos_do_postit(cnpj: str, texto: str, tel_da_ligacao: str, quem: str) -> list[str]:
+    """Telefones e e-mails escritos no post-it entram nos contatos da empresa. Telefone sem DDD ganha o DDD
+    da ligacao; o resto da linha (nome, area) vira o rotulo. Devolve o que foi incluido agora."""
+    ddd = (dados.normalizar(tel_da_ligacao) or "")[:2]
+    novos = []
+    for linha in (texto or "").splitlines():
+        sem_email = _EMAIL_NO_TEXTO.sub(" ", linha)
+        for m in _TEL_NO_TEXTO.finditer(sem_email):
+            numero = (m.group(1) or ddd) + m.group(2) + m.group(3)
+            rotulo = re.sub(r"\s{2,}", " ", (sem_email[:m.start()] + " " + sem_email[m.end():])).strip(" -–:·,;")
+            r = dados.adicionar_telefone(cnpj, numero, rotulo or "do post-it", quem)
+            if r.get("ok") and "incluído" in r.get("mensagem", ""):
+                novos.append(f"telefone {dados.formatar(dados.normalizar(numero))}" + (f" ({rotulo})" if rotulo else ""))
+        for em in _EMAIL_NO_TEXTO.findall(linha):
+            em = em.lower().rstrip(".")
+            with dados.engine().begin() as conn:
+                e = _q(conn, "SELECT email, email_2 FROM empresas WHERE cnpj = :c", c=cnpj)
+                if not e or em in f"{e[0]['email'] or ''} {e[0]['email_2'] or ''}".lower():
+                    continue
+                col = "email" if not e[0]["email"] else "email_2"
+                atual = e[0][col] or ""
+                conn.execute(sa.text(f"UPDATE empresas SET {col} = :v WHERE cnpj = :c"),
+                             {"v": f"{atual}; {em}" if atual else em, "c": cnpj})
+            novos.append(f"e-mail {em}")
+    if novos:
+        with dados.engine().begin() as conn:
+            _historico(conn, cnpj, "nota", quem, "Contatos incluídos pelo post-it: " + "; ".join(novos))
+    return novos
+
+
 def anotar_ligacao(cnpj: str, quem: str, texto: str, hist_id: int | None = None) -> int | None:
     """O post-it da ligacao no historico da empresa: cria a linha na primeira vez e depois so a atualiza
     (salva sozinho enquanto o vendedor escreve, com ou sem baixa). Devolve o id da linha."""

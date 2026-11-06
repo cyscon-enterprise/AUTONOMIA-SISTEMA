@@ -459,8 +459,12 @@ def _salvar_postit(n: dict, qualif: str = "") -> None:
     if not texto:
         return
     onde = ", ".join(x for x in (qualif, dados.formatar(n.get("telefone"))) if x)
-    ss[f"nota_hist{n['id']}"] = V.anotar_ligacao(n["cnpj"], ss.get("quem") or eu()["nome"],
-                                                 f"Anotação da ligação ({onde}): {texto}", ss.get(f"nota_hist{n['id']}"))
+    quem = ss.get("quem") or eu()["nome"]
+    ss[f"nota_hist{n['id']}"] = V.anotar_ligacao(n["cnpj"], quem, f"Anotação da ligação ({onde}): {texto}",
+                                                 ss.get(f"nota_hist{n['id']}"))
+    novos = V.contatos_do_postit(n["cnpj"], texto, n.get("telefone"), quem)   # celular/e-mail anotado -> contatos
+    if novos:
+        ss[f"nota_contatos{n['id']}"] = ss.get(f"nota_contatos{n['id']}", []) + novos
 
 
 def baixa_na_tela(n: dict) -> None:
@@ -481,7 +485,8 @@ def baixa_na_tela(n: dict) -> None:
                             placeholder="Anote aqui durante a conversa: nome, cargo, ramal, sistema atual, próximo passo…",
                             on_change=_salvar_postit, args=(n,))
         if ss.get(f"nota_hist{n['id']}"):
-            st.caption("✓ salvo no histórico do lead")
+            extra = ss.get(f"nota_contatos{n['id']}")
+            st.caption("✓ salvo no histórico do lead" + (f" · incluído nos contatos: {'; '.join(extra)}" if extra else ""))
     st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
