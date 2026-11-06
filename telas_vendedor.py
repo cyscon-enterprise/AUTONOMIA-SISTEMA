@@ -563,8 +563,8 @@ def _carteira(todos: bool) -> None:
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = sorted([l for l in lista if l["proximo_contato"]], key=lambda l: l["proximo_contato"])
-        for titulo, grupo in [("Atrasados", [l for l in marcados if l["proximo_contato"][:10] < hoje]),
-                              ("Hoje", [l for l in marcados if l["proximo_contato"][:10] == hoje]),
+        for titulo, grupo in [("Hoje", [l for l in marcados if l["proximo_contato"][:10] == hoje]),
+                              ("Atrasados", [l for l in marcados if l["proximo_contato"][:10] < hoje]),
                               ("Próximos", [l for l in marcados if l["proximo_contato"][:10] > hoje])]:
             st.markdown(f"<div style='font-size:15px;font-weight:700;color:#0f2a5c;margin:6px 0 2px'>{titulo} "
                         f"({len(grupo)})</div>", unsafe_allow_html=True)

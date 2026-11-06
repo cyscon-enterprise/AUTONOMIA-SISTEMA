@@ -382,8 +382,8 @@ def pagina() -> None:
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = [c for c in q["cards"] if c["proximo_contato"]]
-        grupos = {"Atrasados": [c for c in marcados if c["atrasado"] and c["proximo_contato"][:10] < hoje],
-                  "Hoje": [c for c in marcados if c["proximo_contato"][:10] == hoje],
+        grupos = {"Hoje": [c for c in marcados if c["proximo_contato"][:10] == hoje],
+                  "Atrasados": [c for c in marcados if c["atrasado"] and c["proximo_contato"][:10] < hoje],
                   "Próximos": [c for c in marcados if c["proximo_contato"][:10] > hoje]}
         for titulo, lista in grupos.items():
             st.markdown(f"<div style='font-size:15px;font-weight:700;color:#0f2a5c;margin:6px 0 2px'>{titulo} "
