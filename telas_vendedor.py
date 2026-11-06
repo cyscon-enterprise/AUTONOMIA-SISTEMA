@@ -354,6 +354,8 @@ def painel_ramal(s3: dict) -> None:
     cor = {0: "#d97706", 1: "#1a7f4b", 2: "#1565c0", 3: "#d97706"}.get(status, "#8a94a6")
     st.markdown(f"<span class='ponto' style='background:{cor}'></span>**{rotulo[0].upper() + rotulo[1:]}**",
                 unsafe_allow_html=True)
+    if status in (2, 3):                                # em ligacao ou pos-atendimento: ligacao nova?
+        ligacao_nova_fora_do_discador()
     if status == 0:
         _comecar(s3)
     elif status and st.button("⏸ Parar de receber ligações", use_container_width=True):
@@ -406,6 +408,12 @@ def painel_na_linha() -> None:
                         "color:#1565c0'>⏳ Aguardando chamada…</div><div style='color:#5b6b85;margin-top:8px'>Quando "
                         "alguém atender, os dados da empresa aparecem aqui.</div></div>", unsafe_allow_html=True)
             return
+        cartao_ligacao(n)
+
+
+def cartao_ligacao(n: dict) -> None:
+    """Tudo da ligacao atendida: empresa, numero discado, post-it, baixa, insight, dados e contatos anteriores."""
+    if True:
         f = V.ficha(n["cnpj"])
         if not f:
             st.caption(f"CNPJ {n['cnpj']} não está na mestra.")
@@ -446,6 +454,25 @@ def painel_na_linha() -> None:
                                    f"{html.escape(str(e['historico']))}</div>")
                     st.markdown(f"<div style='font-size:14px;line-height:1.6;color:#344054'>{linhas}</div>",
                                 unsafe_allow_html=True)
+
+
+@st.dialog("📞 Ligação atendida", width="large")
+def popup_ligacao(n: dict) -> None:
+    """Abre por cima de qualquer aba quando o discador passa uma ligacao e o vendedor nao esta no Discador."""
+    cartao_ligacao(n)
+
+
+def ligacao_nova_fora_do_discador() -> None:
+    """Chamado pela barra lateral (a cada 10 s, em todas as abas): ligacao nova + outra aba = pede o pop-up."""
+    if ss.get("_pagina") == "discador":
+        return
+    n = V.na_linha()
+    if not n or not n.get("id") or n["id"] in ss.get("baixadas", set()) or n["id"] == ss.get("_popup_visto"):
+        return
+    ss.ultima_chamada = n
+    ss._popup = n
+    ss._popup_visto = n["id"]
+    st.rerun()                                          # a pagina inteira roda e o app.py abre o pop-up
 
 
 CAMPOS_NA_LINHA = [

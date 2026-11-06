@@ -474,3 +474,6 @@ ss._pagina = pg.url_path
 if ss.pop("_ir_discador", False) and pg.url_path != "discador":    # clicou "Comecar a receber ligacoes" em outra aba
     st.switch_page(telas_vendedor.PAGINA_DISCADOR)
 pg.run()
+_pop = ss.pop("_popup", None)                       # ligacao atendida com o vendedor em outra aba: pop-up por cima
+if _pop and pg.url_path != "discador" and _pop.get("id") not in ss.get("baixadas", set()):
+    telas_vendedor.popup_ligacao(_pop)
