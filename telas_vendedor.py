@@ -428,10 +428,25 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
         esq, dir_ = st.columns([1.15, 1], gap="large")
         with esq:
             # o numero desta ligacao, em destaque: um ramal passado na conversa e o final DESTE telefone
-            st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:1px solid #1a7f4b;border-radius:8px;"
-                        f"padding:3px 12px;margin:0 0 8px;font-size:15px;font-weight:600;color:#14532d'>📞 Número discado: "
-                        f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
-                        unsafe_allow_html=True)
+            c_num, c_desl = st.columns([3, 1.2], vertical_alignment="center")
+            c_num.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:1px solid #1a7f4b;border-radius:8px;"
+                           f"padding:3px 12px;margin:0 0 8px;font-size:15px;font-weight:600;color:#14532d'>📞 Número discado: "
+                           f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
+                           unsafe_allow_html=True)
+            k = _k(n, onde)
+            if not ss.get(f"desligada{k}"):
+                if c_desl.button("📴 Desligar", key=f"desl{k}", type="primary", use_container_width=True):
+                    try:
+                        tresc.desligar(n["id"], ss.get("sessao3c"))
+                        ss[f"desligada{k}"] = True
+                        ss.ultima_chamada = n                  # o cartao fica para a qualificacao
+                        st.rerun(scope="fragment")             # Discador e pop-up sao fragmentos
+                    except tresc.Erro3C as e:
+                        st.error(f"3C: {e}")
+            else:
+                st.markdown("<div style='background:#FFF4E5;border:1px solid #F0A350;border-radius:8px;padding:6px 12px;"
+                            "margin:2px 0 10px;font-weight:600;color:#7a3e00'>📴 Ligação encerrada: qualifique a chamada "
+                            "abaixo.</div>", unsafe_allow_html=True)
             baixa_na_tela(n, onde)
         with dir_:
             # tudo do cliente, na hora em que ele atende: insight, faturamento, porte, contatos, historico
@@ -531,7 +546,7 @@ def baixa_na_tela(n: dict, onde: str = "tela") -> None:
         if ss.get(f"nota_hist{n['id']}"):
             extra = ss.get(f"nota_contatos{n['id']}")
             st.caption("✓ salvo no histórico do lead" + (f" · incluído nos contatos: {'; '.join(extra)}" if extra else ""))
-    st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
+    st.markdown("**Qualificação da chamada** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{k}")
     h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{k}")
