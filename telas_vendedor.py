@@ -550,7 +550,16 @@ def _carteira(todos: bool) -> None:
     with aba_lista:
         if not lista:
             st.info("Nenhum cliente ainda. Os clientes com quem você falar pelo discador aparecem aqui.")
-        grade(lista, lambda l: cartao(l, "c"))
+        # duas colunas: New Names (prospeccao) e Servicos (vindos das campanhas #SERVICO)
+        col_nn, col_sv = st.columns(2, gap="large")
+        for col, titulo, grupo, k in ((col_nn, "🗂 New Names", [l for l in lista if not l["servico"]], "cn"),
+                                      (col_sv, "🛠 Serviços", [l for l in lista if l["servico"]], "cs")):
+            with col:
+                st.markdown(f"<div style='font-size:15px;font-weight:700;color:#0f2a5c;margin:4px 0 6px'>{titulo} "
+                            f"({len(grupo)})</div>", unsafe_allow_html=True)
+                if not grupo:
+                    st.caption("nenhum cliente aqui")
+                grade(grupo, lambda l, k=k: cartao(l, k), por_linha=2)
     with aba_agenda:
         hoje = dados.agora().date().isoformat()
         marcados = sorted([l for l in lista if l["proximo_contato"]], key=lambda l: l["proximo_contato"])

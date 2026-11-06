@@ -635,7 +635,8 @@ def carteira(vendedor_id: int | None) -> list[dict]:
     filtro = "WHERE c.vendedor_id = :v" if vendedor_id else ""
     with dados.engine().connect() as conn:
         linhas = _q(conn, f"SELECT {COLS_LISTA}, c.vendedor_id, c.desde, c.motivo, v.nome AS vendedor, "
-                          "(SELECT max(i.quando) FROM crm_interacoes i WHERE i.cnpj = c.cnpj) AS ultimo "
+                          "(SELECT max(i.quando) FROM crm_interacoes i WHERE i.cnpj = c.cnpj) AS ultimo, "
+                          "EXISTS (SELECT 1 FROM crm_servicos_cards s WHERE s.cnpj = c.cnpj) AS servico "
                           "FROM crm_carteira c JOIN empresas e ON e.cnpj = c.cnpj "
                           f"JOIN crm_vendedores v ON v.id = c.vendedor_id {filtro} ORDER BY c.desde DESC",
                     **({"v": vendedor_id} if vendedor_id else {}))
