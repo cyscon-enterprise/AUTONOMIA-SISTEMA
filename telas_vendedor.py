@@ -412,8 +412,8 @@ def painel_na_linha() -> None:
         esq, dir_ = st.columns([1.15, 1], gap="large")
         with esq:
             # o numero desta ligacao, em destaque: um ramal passado na conversa e o final DESTE telefone
-            st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:2px solid #1a7f4b;border-radius:10px;"
-                        f"padding:8px 18px;margin:2px 0 10px;font-size:26px;font-weight:700;color:#14532d'>📞 Falando com "
+            st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:1px solid #1a7f4b;border-radius:8px;"
+                        f"padding:3px 12px;margin:0 0 8px;font-size:15px;font-weight:600;color:#14532d'>📞 Número discado: "
                         f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
                         unsafe_allow_html=True)
             baixa_na_tela(n)
