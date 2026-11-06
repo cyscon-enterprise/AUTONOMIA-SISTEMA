@@ -386,7 +386,8 @@ def pagina() -> None:
                   "Hoje": [c for c in marcados if c["proximo_contato"][:10] == hoje],
                   "Próximos": [c for c in marcados if c["proximo_contato"][:10] > hoje]}
         for titulo, lista in grupos.items():
-            st.markdown(f"#### {titulo} ({len(lista)})")
+            st.markdown(f"<div style='font-size:15px;font-weight:700;color:#0f2a5c;margin:6px 0 2px'>{titulo} "
+                        f"({len(lista)})</div>", unsafe_allow_html=True)
             if not lista:
                 st.caption("nada aqui")
             grade(sorted(lista, key=lambda c: c["proximo_contato"]), lambda c: cartao(c, "a"))

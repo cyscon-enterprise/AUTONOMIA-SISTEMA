@@ -557,7 +557,8 @@ def _carteira(todos: bool) -> None:
         for titulo, grupo in [("Atrasados", [l for l in marcados if l["proximo_contato"][:10] < hoje]),
                               ("Hoje", [l for l in marcados if l["proximo_contato"][:10] == hoje]),
                               ("Próximos", [l for l in marcados if l["proximo_contato"][:10] > hoje])]:
-            st.markdown(f"#### {titulo} ({len(grupo)})")
+            st.markdown(f"<div style='font-size:15px;font-weight:700;color:#0f2a5c;margin:6px 0 2px'>{titulo} "
+                        f"({len(grupo)})</div>", unsafe_allow_html=True)
             if not grupo:
                 st.caption("nada aqui")
             grade(grupo, lambda l: cartao(l, "a"))
