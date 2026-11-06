@@ -394,7 +394,12 @@ def painel_na_linha() -> None:
         e = f["empresa"]
         st.markdown(f"### {e.get('nome_fantasia') or e.get('nome')}")
         st.caption(" · ".join(x for x in [e.get("cidade"), e.get("estado"), e.get("entidade"), e.get("segmento"),
-                                          e.get("produto") and f"ERP: {e['produto']}", dados.formatar(n["telefone"])] if x))
+                                          e.get("produto") and f"ERP: {e['produto']}"] if x))
+        # o numero desta ligacao, em destaque: um ramal passado na conversa e o final DESTE telefone
+        st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:2px solid #1a7f4b;border-radius:10px;"
+                    f"padding:8px 18px;margin:2px 0 10px;font-size:26px;font-weight:700;color:#14532d'>📞 Falando com "
+                    f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
+                    unsafe_allow_html=True)
         if f["dono"] and f["dono"]["vendedor_id"] != eu()["id"]:
             st.warning(f"Este cliente já é da carteira de {f['dono']['nome']}.")
         baixa_na_tela(n)
