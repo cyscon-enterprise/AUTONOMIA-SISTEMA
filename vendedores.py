@@ -579,7 +579,7 @@ def sincronizar(forcar: bool = False) -> dict:
                 cont["novas_carteira"] += 1
         _marcar(conn, m, momento, momento)
     for cid, cnpj, contexto, quem, titulo in para_ia:
-        ia_auto.agendar(cid, cnpj, contexto, quem, titulo, registrar_resumo_ia)
+        ia_auto.agendar(cid, cnpj, contexto, quem, titulo, registrar_resumo_ia, anotacoes_recentes)
     return cont
 
 
@@ -732,10 +732,26 @@ def insight(cnpj: str) -> str:
     return ""
 
 
-def anotar_ligacao(cnpj: str, quem: str, texto: str) -> None:
-    """A anotacao que o vendedor escreveu durante a ligacao entra no historico da empresa."""
+def anotacoes_recentes(cnpj: str, horas: int = 2) -> str:
+    """O post-it das ligacoes recentes desta empresa (para a IA usar no resumo)."""
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT texto FROM crm_interacoes WHERE cnpj = :c AND texto LIKE 'Anotação da ligação%' "
+                     "AND quando >= :d ORDER BY quando", c=cnpj, d=dados.agora() - dt.timedelta(hours=horas))
+    return "\n".join(x["texto"] for x in r)
+
+
+def anotar_ligacao(cnpj: str, quem: str, texto: str, hist_id: int | None = None) -> int | None:
+    """O post-it da ligacao no historico da empresa: cria a linha na primeira vez e depois so a atualiza
+    (salva sozinho enquanto o vendedor escreve, com ou sem baixa). Devolve o id da linha."""
     with dados.engine().begin() as conn:
+        if hist_id:
+            n = conn.execute(sa.text("UPDATE crm_interacoes SET texto = :t WHERE id = :i AND cnpj = :c"),
+                             {"t": texto, "i": hist_id, "c": cnpj}).rowcount
+            if n:
+                return hist_id
         _historico(conn, cnpj, "ligacao", quem, texto)
+        return conn.execute(sa.text("SELECT max(id) FROM crm_interacoes WHERE cnpj = :c AND texto = :t"),
+                            {"c": cnpj, "t": texto}).scalar()
 
 
 def registrar_resumo_ia(cnpj: str, texto: str) -> None:

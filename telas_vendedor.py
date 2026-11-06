@@ -453,6 +453,16 @@ CAMPOS_NA_LINHA = [
 ]
 
 
+def _salvar_postit(n: dict, qualif: str = "") -> None:
+    """Grava o post-it no historico assim que o vendedor sai da caixa (e de novo na baixa, com a qualificacao)."""
+    texto = (ss.get(f"nota{n['id']}") or "").strip()
+    if not texto:
+        return
+    onde = ", ".join(x for x in (qualif, dados.formatar(n.get("telefone"))) if x)
+    ss[f"nota_hist{n['id']}"] = V.anotar_ligacao(n["cnpj"], ss.get("quem") or eu()["nome"],
+                                                 f"Anotação da ligação ({onde}): {texto}", ss.get(f"nota_hist{n['id']}"))
+
+
 def baixa_na_tela(n: dict) -> None:
     """Qualifica a chamada na 3C daqui mesmo; a sincronizacao leva o cliente para a carteira."""
     if not n.get("id"):
@@ -467,8 +477,11 @@ def baixa_na_tela(n: dict) -> None:
                 "font-size:17px !important;line-height:1.5 !important;border:1px solid #E6D96A !important;"
                 "box-shadow:2px 3px 8px rgba(120,100,0,.18)}</style>", unsafe_allow_html=True)
     with st.container(key="postit"):
-        nota = st.text_area("📝 Anotações da ligação", key=f"nota{n['id']}", height=150,
-                            placeholder="Anote aqui durante a conversa: nome, cargo, ramal, sistema atual, próximo passo…")
+        nota = st.text_area("📝 Anotações da ligação · salvam sozinhas no histórico", key=f"nota{n['id']}", height=150,
+                            placeholder="Anote aqui durante a conversa: nome, cargo, ramal, sistema atual, próximo passo…",
+                            on_change=_salvar_postit, args=(n,))
+        if ss.get(f"nota_hist{n['id']}"):
+            st.caption("✓ salvo no histórico do lead")
     st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
@@ -485,8 +498,7 @@ def baixa_na_tela(n: dict) -> None:
             try:
                 tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
                 if (nota or "").strip():
-                    V.anotar_ligacao(n["cnpj"], ss.get("quem") or eu()["nome"],
-                                     f"Anotação da ligação ({q['nome']}, {dados.formatar(n.get('telefone'))}): {nota.strip()}")
+                    _salvar_postit(n, q["nome"])
                 ss.pop("ultima_chamada", None)
                 V.sincronizar(forcar=True)
                 st.success(f"Baixa dada: {q['nome']}.")
