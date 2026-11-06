@@ -196,7 +196,10 @@ def tela_login() -> None:
             st.error("Login ou senha incorretos.")
         st.markdown("<p style='text-align:center;color:#5b6b85;margin:14px 0 4px'>Ainda não tem acesso?</p>",
                     unsafe_allow_html=True)
-        if st.button("Quero me cadastrar como vendedor autônomo", use_container_width=True):
+        # cadastro aberto desligado por enquanto (pedido da dona): o botao fica a vista, cinza e sem acao
+        CADASTRO_ABERTO = False
+        if st.button("Quero me cadastrar como vendedor autônomo", use_container_width=True,
+                     disabled=not CADASTRO_ABERTO, help=None if CADASTRO_ABERTO else "Cadastro em breve"):
             ss.tela_cadastro = True
             st.rerun()
     st.stop()
