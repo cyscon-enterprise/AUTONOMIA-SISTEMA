@@ -452,7 +452,7 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
                 st.markdown("<div style='background:#FFF4E5;border:1px solid #F0A350;border-radius:8px;padding:6px 12px;"
                             "margin:2px 0 10px;font-weight:600;color:#7a3e00'>📴 Ligação encerrada: qualifique a chamada "
                             "abaixo.</div>", unsafe_allow_html=True)
-            baixa_na_tela(n, onde)
+            baixa_na_tela(n, onde, em_andamento)
         with dir_:
             # tudo do cliente, na hora em que ele atende: insight, faturamento, porte, contatos, historico
             st.markdown("#### Insight")
@@ -479,6 +479,12 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
 @st.dialog("📞 Ligação atendida", width="large")
 def popup_ligacao(n: dict) -> None:
     """Abre por cima de qualquer aba quando o discador passa uma ligacao e o vendedor nao esta no Discador."""
+    _popup_corpo(n)
+
+
+@st.fragment(run_every="5s")
+def _popup_corpo(n: dict) -> None:
+    """Atualiza sozinho dentro do pop-up: percebe o fim da ligacao e mostra a qualificacao."""
     cartao_ligacao(n, "pop")
 
 
@@ -530,7 +536,7 @@ def _k(n: dict, onde: str) -> str:
     return f"{onde}_{re.sub(r'[^A-Za-z0-9]', '', str(n.get('id') or ''))}"
 
 
-def baixa_na_tela(n: dict, onde: str = "tela") -> None:
+def baixa_na_tela(n: dict, onde: str = "tela", em_andamento: bool = False) -> None:
     """Qualifica a chamada na 3C daqui mesmo; a sincronizacao leva o cliente para a carteira."""
     if not n.get("id"):
         return
@@ -551,6 +557,9 @@ def baixa_na_tela(n: dict, onde: str = "tela") -> None:
         if ss.get(f"nota_hist{n['id']}"):
             extra = ss.get(f"nota_contatos{n['id']}")
             st.caption("✓ salvo no histórico do lead" + (f" · incluído nos contatos: {'; '.join(extra)}" if extra else ""))
+    if em_andamento:                                    # a qualificacao so aparece quando a ligacao termina
+        st.caption("Os botões de qualificação aparecem aqui assim que a ligação terminar.")
+        return
     st.markdown("**Qualificação da chamada** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{k}")
