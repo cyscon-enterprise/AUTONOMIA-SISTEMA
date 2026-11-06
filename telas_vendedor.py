@@ -306,14 +306,23 @@ def pagina_discador() -> None:
                         unsafe_allow_html=True)
 
 
+PAGINA_DISCADOR = None          # o st.Page do Discador (app.py preenche): "Comecar a receber ligacoes" leva para la
+
+
 def entrar_modo(s3: dict, campanha, manual: bool) -> None:
     try:
         tresc.entrar_campanha(s3["token"], campanha, manual=manual)
         s3["modo"] = "manual" if manual else "discador"
-        st.success("Pronto. Se o telefone da barra lateral tocar, atenda: é a 3C conectando você."
-                   + (" Depois é só clicar nos ☎ das fichas." if manual else " Em seguida as ligações começam a chegar."))
     except tresc.Erro3C as e:
         st.error(f"3C: {e}")
+        return
+    texto = ("Pronto. Se o telefone da barra lateral tocar, atenda: é a 3C conectando você."
+             + (" Depois é só clicar nos ☎ das fichas." if manual else " Em seguida as ligações começam a chegar."))
+    if not manual:                                      # de qualquer aba, vai direto para o Discador (app.py)
+        ss.msg = ("ok", texto)
+        ss._ir_discador = True
+        st.rerun()                                      # dentro do fragmento da barra: roda a pagina inteira
+    st.success(texto)
 
 
 def controle_ligacao_manual() -> None:

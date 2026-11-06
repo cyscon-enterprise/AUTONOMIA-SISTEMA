@@ -437,7 +437,9 @@ with st.sidebar:
 
 # vendedor: discador, carteira e funil. Administrador: a visao geral do CRM (abre nela) + tudo do vendedor
 admin = bool(ss.usuario.get("admin"))
-paginas = [st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞", url_path="discador", default=not admin),
+telas_vendedor.PAGINA_DISCADOR = st.Page(telas_vendedor.pagina_discador, title="Discador", icon="📞",
+                                         url_path="discador", default=not admin)
+paginas = [telas_vendedor.PAGINA_DISCADOR,
            st.Page(telas_vendedor.pagina_carteira, title="Minha carteira", icon="📇", url_path="carteira"),
            st.Page(tela_new_names.pagina, title="Funil New Names", icon="🗂", url_path="new-names"),
            st.Page(telas_vendedor.pagina_funil_servicos, title="Funil Serviços", icon="🛠", url_path="servicos")]
@@ -469,4 +471,6 @@ if ss.get("_pagina") != pg.url_path or "ficha" not in st.query_params:
     ss.cliente = None
     ss.lead = None
 ss._pagina = pg.url_path
+if ss.pop("_ir_discador", False) and pg.url_path != "discador":    # clicou "Comecar a receber ligacoes" em outra aba
+    st.switch_page(telas_vendedor.PAGINA_DISCADOR)
 pg.run()
