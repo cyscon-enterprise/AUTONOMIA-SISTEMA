@@ -408,7 +408,7 @@ with st.sidebar:
     # tudo da 3C fica aqui: o telefone web (WebRTC) fora das paginas nao cai ao trocar de pagina
     if ss.get("sessao3c"):
         st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")
-        components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=360, scrolling=True)
+        components.iframe(tresc.webphone_url(ss.sessao3c["token"]), height=270, scrolling=True)
         telas_vendedor.painel_ramal(ss.sessao3c)
         if st.button("■ Encerrar meu turno", use_container_width=True):
             with st.spinner("Saindo da 3C e fechando a conta do turno…"):

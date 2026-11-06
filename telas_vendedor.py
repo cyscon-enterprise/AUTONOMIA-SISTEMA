@@ -281,7 +281,7 @@ def pagina_discador() -> None:
     else:
         faixa("📞", "Discador", "Ligações automáticas da campanha")
         quadro_espera("📵 Telefone desconectado", "Para começar, clique em **📞 Conectar telefone** na barra lateral. "
-                      "Depois escolha a campanha e clique em **▶ Começar a ligar**.")
+                      "Depois clique em **▶ Começar a receber ligações**.")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
 
     meus = [x for x in V.turnos_recentes(7) if x["vendedor_id"] == eu()["id"]]
@@ -302,8 +302,8 @@ def entrar_modo(s3: dict, campanha, manual: bool) -> None:
     try:
         tresc.entrar_campanha(s3["token"], campanha, manual=manual)
         s3["modo"] = "manual" if manual else "discador"
-        st.success("Pronto. Se o telefone acima tocar, atenda: é a 3C conectando você."
-                   + (" Depois é só clicar nos ☎ das fichas." if manual else " Em seguida o discador começa."))
+        st.success("Pronto. Se o telefone da barra lateral tocar, atenda: é a 3C conectando você."
+                   + (" Depois é só clicar nos ☎ das fichas." if manual else " Em seguida as ligações começam a chegar."))
     except tresc.Erro3C as e:
         st.error(f"3C: {e}")
 
@@ -329,32 +329,42 @@ def controle_ligacao_manual() -> None:
 
 @st.fragment(run_every="10s")
 def painel_ramal(s3: dict) -> None:
-    """Barra lateral, com o telefone conectado: estado do ramal, campanha e Comecar/Parar de ligar."""
+    """Barra lateral, com o telefone conectado: so o estado do ramal e Parar. A campanha e o botao de
+    comecar ficam no quadro do meio do Discador, a vista."""
     status = tresc.status_ramal(s3["ramal"])
     rotulo = tresc.STATUS_AGENTE.get(status, f"status {status}") if status is not None else "sem resposta da 3C"
     if status == 0:                                     # o telefone web registrou, mas o ramal ainda nao esta na campanha
-        rotulo = "telefone pronto · clique em Começar a ligar"
+        rotulo = "ramal conectado"
     cor = {0: "#d97706", 1: "#1a7f4b", 2: "#1565c0", 3: "#d97706"}.get(status, "#8a94a6")
     st.markdown(f"<span class='ponto' style='background:{cor}'></span>**{rotulo[0].upper() + rotulo[1:]}**",
                 unsafe_allow_html=True)
-    if not status:                                      # fora da campanha
-        lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
-        boas = _com_contatos()
-        lista = [c for c in lista if int(c["id"]) in boas] or lista   # so as que tem telefones
-        camps = {c["nome"]: c["id"] for c in lista}
-        nome = st.selectbox("Campanha", list(camps)) if len(camps) > 1 else next(iter(camps))
-        if len(camps) == 1:
-            st.caption(f"Campanha: **{nome}**")
-        st.caption("Permita o microfone no telefone acima antes de começar.")
-        if st.button("▶ Começar a ligar", type="primary", use_container_width=True,
-                     help="O discador liga sozinho para a base e passa para você quem atender."):
-            entrar_modo(s3, camps[nome], manual=False)
-        if st.button("☎ Só ligações manuais", use_container_width=True,
-                     help="O discador fica parado; você liga pelos botões ☎ das fichas."):
-            entrar_modo(s3, camps[nome], manual=True)
-    elif st.button("⏸ Parar de ligar", use_container_width=True):
+    if status == 0:
+        st.caption("Para receber ligações, clique em **▶ Começar a receber ligações** no Discador.")
+    elif status and st.button("⏸ Parar de receber ligações", use_container_width=True):
         tresc.sair(s3)
         st.rerun(scope="fragment")
+
+
+def _comecar(s3: dict) -> None:
+    """Dentro do quadro do Discador: a campanha (so as que tem telefones) e o botao de comecar."""
+    lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
+    boas = _com_contatos()
+    lista = [c for c in lista if int(c["id"]) in boas] or lista
+    camps = {c["nome"]: c["id"] for c in lista}
+    _, meio, _ = st.columns([1, 2, 1])
+    with meio:
+        if len(camps) > 1:
+            nome = st.selectbox("Campanha", list(camps))
+        else:
+            nome = next(iter(camps))
+            st.markdown(f"<div style='text-align:center;color:#5b6b85'>Campanha: <b>{html.escape(nome)}</b></div>",
+                        unsafe_allow_html=True)
+        if st.button("▶ Começar a receber ligações", type="primary", use_container_width=True,
+                     help="O discador liga sozinho para a base e passa para você quem atender."):
+            entrar_modo(s3, camps[nome], manual=False)
+        if st.button("☎ Prefiro ligar manualmente", use_container_width=True,
+                     help="O discador fica parado; você liga pelos botões ☎ das fichas."):
+            entrar_modo(s3, camps[nome], manual=True)
 
 
 @st.fragment(run_every="10s")
@@ -369,6 +379,15 @@ def painel_na_linha() -> None:
             n = ss.ultima_chamada
             st.caption("Ligação encerrada: dê a baixa abaixo para o discador seguir.")
         if not n:
+            s3 = ss.get("sessao3c") or {}
+            if s3 and tresc.status_ramal(s3["ramal"]) == 0:          # conectado, mas ainda fora da campanha
+                st.markdown("<div style='text-align:center;padding:30px 0 6px'><div style='font-size:30px;"
+                            "font-weight:700;color:#1a7f4b'>📞 Ramal conectado</div><div style='color:#5b6b85;"
+                            "margin-top:8px'>Para começar a receber ligações, clique em <b>▶ Começar a receber "
+                            "ligações</b>.</div></div>", unsafe_allow_html=True)
+                _comecar(s3)
+                st.write("")
+                return
             st.markdown("<div style='text-align:center;padding:38px 0 30px'><div style='font-size:30px;font-weight:700;"
                         "color:#1565c0'>⏳ Aguardando chamada…</div><div style='color:#5b6b85;margin-top:8px'>Quando "
                         "alguém atender, os dados da empresa aparecem aqui.</div></div>", unsafe_allow_html=True)
