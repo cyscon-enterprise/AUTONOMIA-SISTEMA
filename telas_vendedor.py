@@ -423,11 +423,11 @@ def painel_na_linha() -> None:
                         '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
                         unsafe_allow_html=True)
             st.markdown("#### Dados da empresa")
-            with st.container(border=True, height=420):
+            with st.container(border=True):
                 dados_compactos(CAMPOS_NA_LINHA, e)
             if f["historico"] or e.get("historico"):
                 st.markdown("#### Contatos anteriores")
-                with st.container(border=True, height=220):
+                with st.container(border=True):
                     linhas = "".join(f"<div><b>{br(h['quando'])}</b> · {html.escape(h.get('quem') or '')} · "
                                      f"{html.escape(h.get('texto') or h.get('etapa_para') or '')}</div>"
                                      for h in f["historico"][:8])
