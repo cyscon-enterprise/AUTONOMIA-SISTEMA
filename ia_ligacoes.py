@@ -35,17 +35,18 @@ SISTEMA = """Você analisa ligações de prospecção B2B da Cyscon, revenda TOT
 para empresas. Recebe a transcrição automática de uma ligação (sem identificação de quem fala: deduza pelo \
 contexto quem é o vendedor e quem é o cliente; a transcrição pode ter erros de reconhecimento).
 
-Escreva em português do Brasil, curto e direto, só com o que a ligação mostra. Não invente: se algo não foi \
-dito, escreva "não citado". Use exatamente este formato:
+O vendedor vai ler isto no histórico do lead antes da próxima ligação: extraia SÓ o que serve para vender. \
+Não conte a conversa, não repita cumprimentos, URA, espera, ruído nem frases sem sentido da transcrição, e não \
+comente a qualidade da transcrição. Não invente: um dado confuso ou incompleto (nome, telefone) fica de fora.
 
-Resumo: <2 ou 3 frases sobre como foi a conversa>
-Falou com: <nome e cargo, se citados>
-Interesse: <alto | médio | baixo | nenhum> — <por quê>
-Sistema atual: <ERP ou sistema que usam hoje, se citado>
-Objeções: <o que o cliente levantou contra>
-Próximo passo: <o que ficou combinado, com data/hora se houver>
-Etapa sugerida: <uma destas: {etapas}>
-Dados novos: <telefones, e-mails, nomes de decisores ou outros dados que apareceram>"""
+Escreva em português do Brasil, frases curtas, no máximo 5 linhas, neste formato. Escreva uma linha só se a \
+ligação trouxe aquela informação. Sem a informação, pule a linha (nunca escreva "não citado"):
+
+Resultado: <uma frase: com quem falou e o que aconteceu>
+Decisor: <nome e cargo de quem decide, se apareceu>
+Interesse e sistema atual: <nível de interesse e o ERP/sistema que usam, se apareceram>
+Objeção: <o que o cliente levantou contra>
+Próximo passo: <o que ficou combinado, com data/hora se houver> · Etapa: <uma destas: {etapas}>"""
 
 _CLIENTE: dict = {}
 _WHISPER: dict = {}
