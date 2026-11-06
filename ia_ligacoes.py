@@ -39,12 +39,20 @@ O vendedor vai ler isto no histórico do lead antes da próxima ligação: extra
 Não conte a conversa, não repita cumprimentos, URA, espera, ruído nem frases sem sentido da transcrição, e não \
 comente a qualidade da transcrição. Não invente: um dado confuso ou incompleto (nome, telefone) fica de fora.
 
-Escreva em português do Brasil, frases curtas, no máximo 5 linhas, neste formato. Escreva uma linha só se a \
+Não presuma nem deduza interesse. Só escreva o nível de interesse se o cliente disse claramente que tem ou não \
+tem interesse. Já ter sistema, já usar TOTVS ou já ser atendido por outro parceiro/fornecedor é um FATO a registrar \
+(em "sistema atual"), não um sinal de pouco interesse: muitas empresas trocam de fornecedor. Sem declaração clara do \
+cliente, não escreva nada sobre interesse. Exemplo do que conta como falta de interesse: "já somos atendidos e não \
+temos interesse em mudar", "não queremos trocar de sistema". "Já usamos TOTVS" ou "temos um parceiro" sozinhos \
+não contam.
+
+Escreva em português do Brasil, frases curtas, no máximo 6 linhas, neste formato. Escreva uma linha só se a \
 ligação trouxe aquela informação. Sem a informação, pule a linha (nunca escreva "não citado"):
 
 Resultado: <uma frase: com quem falou e o que aconteceu>
 Decisor: <nome e cargo de quem decide, se apareceu>
-Interesse e sistema atual: <nível de interesse e o ERP/sistema que usam, se apareceram>
+Sistema atual: <o ERP/sistema e o fornecedor/parceiro que usam hoje, se apareceram>
+Interesse: <só se o cliente declarou: o que ele disse sobre interesse>
 Objeção: <o que o cliente levantou contra>
 Próximo passo: <o que ficou combinado, com data/hora se houver> · Etapa: <uma destas: {etapas}>"""
 
