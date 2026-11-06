@@ -470,13 +470,15 @@ if _nav(key="nav_ficha", on_mesma_change=lambda: None).mesma:
 pg = st.navigation(paginas, position="top")                # menu no topo: a barra fica so para o telefone
 # clicar numa aba do menu abre a LISTA dela, nao o cliente que estava aberto antes. O cliente aberto deixa a marca
 # ?ficha na URL; o menu navega sem ela (mesmo clicando na aba em que ja se esta) e isso fecha a ficha.
-if ss.get("_pagina") != pg.url_path or "ficha" not in st.query_params:
+# a pagina inicial tem url_path "" (endereco principal): por isso o Discador e reconhecido pelo titulo
+_pagina = "discador" if pg.title == "Discador" else (pg.url_path or pg.title)
+if ss.get("_pagina") != _pagina or "ficha" not in st.query_params:
     ss.cliente = None
     ss.lead = None
-ss._pagina = pg.url_path
-if ss.pop("_ir_discador", False) and pg.url_path != "discador":    # clicou "Comecar a receber ligacoes" em outra aba
+ss._pagina = _pagina
+if ss.pop("_ir_discador", False) and _pagina != "discador":        # clicou "Comecar a receber ligacoes" em outra aba
     st.switch_page(telas_vendedor.PAGINA_DISCADOR)
 pg.run()
 _pop = ss.pop("_popup", None)                       # ligacao atendida com o vendedor em outra aba: pop-up por cima
-if _pop and pg.url_path != "discador" and _pop.get("id") not in ss.get("baixadas", set()):
+if _pop and _pagina != "discador" and _pop.get("id") not in ss.get("baixadas", set()):
     telas_vendedor.popup_ligacao(_pop)
