@@ -397,22 +397,32 @@ def painel_na_linha() -> None:
                                           e.get("produto") and f"ERP: {e['produto']}", dados.formatar(n["telefone"])] if x))
         if f["dono"] and f["dono"]["vendedor_id"] != eu()["id"]:
             st.warning(f"Este cliente já é da carteira de {f['dono']['nome']}.")
-        for h in f["historico"][:4]:
-            st.markdown(f"**{br(h['quando'])}** · {h.get('quem') or ''} · {h.get('texto') or h.get('etapa_para') or ''}")
         baixa_na_tela(n)
+        if f["historico"]:
+            st.markdown("**Contatos anteriores**")
+            linhas = "".join(f"<div><b>{br(h['quando'])}</b> · {html.escape(h.get('quem') or '')} · "
+                             f"{html.escape(h.get('texto') or h.get('etapa_para') or '')}</div>" for h in f["historico"][:4])
+            st.markdown(f"<div style='font-size:14px;line-height:1.6;color:#5b6b85'>{linhas}</div>",
+                        unsafe_allow_html=True)
 
 
 def baixa_na_tela(n: dict) -> None:
     """Qualifica a chamada na 3C daqui mesmo; a sincronizacao leva o cliente para a carteira."""
     if not n.get("id"):
         return
-    st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     try:
         quals = tresc.qualificacoes_crm()
     except tresc.Erro3C as e:
         st.caption(f"3C: {e}")
         return
-    nota = st.text_input("Anotação (opcional)", key=f"nota{n['id']}")
+    # post-it amarelo: para anotar DURANTE a conversa; vai para o historico do lead ao dar a baixa
+    st.markdown("<style>.st-key-postit textarea{background:#FFF59D !important;color:#3b3200 !important;"
+                "font-size:17px !important;line-height:1.5 !important;border:1px solid #E6D96A !important;"
+                "box-shadow:2px 3px 8px rgba(120,100,0,.18)}</style>", unsafe_allow_html=True)
+    with st.container(key="postit"):
+        nota = st.text_area("📝 Anotações da ligação", key=f"nota{n['id']}", height=150,
+                            placeholder="Anote aqui durante a conversa: nome, cargo, ramal, sistema atual, próximo passo…")
+    st.markdown("**Baixa da ligação** · Retornar, Enviar e-mail ou Agendar reunião põem o cliente na sua carteira.")
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
     h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{n['id']}")
@@ -422,6 +432,9 @@ def baixa_na_tela(n: dict) -> None:
             ret = f"{d.isoformat()} {h:%H:%M}" if d else None
             try:
                 tresc.baixar_chamada(n["id"], q["id"], nota, ret, ss.get("sessao3c"))
+                if (nota or "").strip():
+                    V.anotar_ligacao(n["cnpj"], ss.get("quem") or eu()["nome"],
+                                     f"Anotação da ligação ({q['nome']}, {dados.formatar(n.get('telefone'))}): {nota.strip()}")
                 ss.pop("ultima_chamada", None)
                 V.sincronizar(forcar=True)
                 st.success(f"Baixa dada: {q['nome']}.")
