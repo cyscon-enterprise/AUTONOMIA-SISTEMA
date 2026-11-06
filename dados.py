@@ -87,7 +87,8 @@ def formatar(d: str) -> str:
 
 def telefones_extras(conn, cnpj: str | None = None) -> dict[str, list[dict]]:
     """Telefones incluidos a mao no CRM (`crm_telefones_extra`), por CNPJ."""
-    sql = "SELECT cnpj, telefone, rotulo FROM crm_telefones_extra" + (" WHERE cnpj = :c" if cnpj else "")
+    sql = ("SELECT cnpj, telefone, rotulo FROM crm_telefones_extra" + (" WHERE cnpj = :c" if cnpj else "")
+           + " ORDER BY criado_em DESC")                       # o mais recente (da ultima ligacao) e o principal
     out: dict[str, list[dict]] = {}
     try:
         for r in _q(conn, sql + " ORDER BY criado_em", **({"c": cnpj} if cnpj else {})):

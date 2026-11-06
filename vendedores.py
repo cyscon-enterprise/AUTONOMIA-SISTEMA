@@ -744,6 +744,25 @@ _TEL_NO_TEXTO = re.compile(r"(?<![\d@])(?:\(?0?(\d{2})\)?[\s.-]*)?(9?\d{4})[\s.-
 _EMAIL_NO_TEXTO = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 
 
+_AREAS = [("TI", r"\b(ti|t\.i\.|tecnologia|inform[aá]tica)\b"), ("RH", r"\b(rh|recursos humanos|dp|departamento pessoal)\b"),
+          ("Fiscal", r"\bfiscal\b"), ("Financeiro", r"\bfinanceir[oa]\b"), ("Contábil", r"\bcont[aá]b(il|ilidade)\b"),
+          ("Controladoria", r"\bcontroladoria\b"), ("Compras", r"\bcompras?\b"), ("Comercial", r"\b(comercial|vendas)\b"),
+          ("Diretoria", r"\b(diretori[ao]|diretor[a]?|dono|s[oó]cio|propriet[aá]rio)\b"), ("Administrativo", r"\badministrativo\b"),
+          ("Logística", r"\blog[ií]stica\b"), ("Produção", r"\bprodu[cç][aã]o\b")]
+
+
+def _rotulo_area(resto: str) -> str:
+    """Rotulo do telefone: a AREA (TI, RH, Fiscal...) na frente e o nome/resto depois: "Controladoria · Ticiana"."""
+    resto = re.sub(r"\s{2,}", " ", resto).strip(" -–:·,;()")
+    for area, padrao in _AREAS:
+        m = re.search(padrao, resto, re.I)
+        if m:
+            nome = re.sub(r"\s{2,}", " ", (resto[:m.start()] + " " + resto[m.end():])).strip(" -–:·,;()")
+            nome = re.sub(r"^(falar|ligar|conversar)\s+(com|para|p/)\s+|\s+(do|da|de|no|na)$", "", nome, flags=re.I).strip()
+            return f"{area} · {nome}"[:40] if nome else area
+    return resto[:40]
+
+
 def contatos_do_postit(cnpj: str, texto: str, tel_da_ligacao: str, quem: str) -> list[str]:
     """Telefones e e-mails escritos no post-it entram nos contatos da empresa. Telefone sem DDD ganha o DDD
     da ligacao; o resto da linha (nome, area) vira o rotulo. Devolve o que foi incluido agora."""
@@ -753,7 +772,7 @@ def contatos_do_postit(cnpj: str, texto: str, tel_da_ligacao: str, quem: str) ->
         sem_email = _EMAIL_NO_TEXTO.sub(" ", linha)
         for m in _TEL_NO_TEXTO.finditer(sem_email):
             numero = (m.group(1) or ddd) + m.group(2) + m.group(3)
-            rotulo = re.sub(r"\s{2,}", " ", (sem_email[:m.start()] + " " + sem_email[m.end():])).strip(" -–:·,;")
+            rotulo = _rotulo_area(sem_email[:m.start()] + " " + sem_email[m.end():])
             r = dados.adicionar_telefone(cnpj, numero, rotulo or "do post-it", quem)
             if r.get("ok") and "incluído" in r.get("mensagem", ""):
                 novos.append(f"telefone {dados.formatar(dados.normalizar(numero))}" + (f" ({rotulo})" if rotulo else ""))
@@ -789,9 +808,14 @@ def anotar_ligacao(cnpj: str, quem: str, texto: str, hist_id: int | None = None)
 
 
 def registrar_resumo_ia(cnpj: str, texto: str) -> None:
-    """O resumo da ligacao feito pela IA entra no historico da empresa (carteira)."""
+    """O resumo da ligacao feito pela IA entra no historico da empresa (carteira). Telefones e e-mails do
+    "Contato indicado" (menos os marcados "conferir") entram nos contatos, com a area no rotulo."""
     with dados.engine().begin() as conn:
         _historico(conn, cnpj, "nota", "IA · resumo da ligação", texto)
+    linha = next((l for l in texto.splitlines() if l.lower().startswith("contato indicado")), "")
+    if linha and "conferir" not in linha.lower():
+        tel = re.search(r"\(\d{2}\) \d{4,5}-\d{4}", texto.splitlines()[0])      # o telefone da ligacao, no titulo
+        contatos_do_postit(cnpj, linha.split(":", 1)[-1], tel.group(0) if tel else "", "IA · resumo da ligação")
 
 
 def registrar(vend: dict, cnpj: str, tipo: str, texto: str) -> dict:
