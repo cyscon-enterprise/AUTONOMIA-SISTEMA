@@ -546,7 +546,7 @@ def _carteira(todos: bool) -> None:
         lista = [l for l in lista if b in f"{l['nome_exibir']} {l['nome']} {l['cnpj']} {l['cidade']}".lower()]
     if so_atr:
         lista = [l for l in lista if l["atrasado"]]
-    aba_lista, aba_agenda = st.tabs([f"Clientes ({len(lista)})", "Agenda"])
+    aba_agenda, aba_lista = st.tabs(["Agenda", f"Clientes ({len(lista)})"])     # a agenda abre primeiro
     with aba_lista:
         if not lista:
             st.info("Nenhum cliente ainda. Os clientes com quem você falar pelo discador aparecem aqui.")
