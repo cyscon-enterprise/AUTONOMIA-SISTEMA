@@ -473,7 +473,12 @@ def baixa_na_tela(n: dict) -> None:
     c1, c2 = st.columns(2)
     d = c1.date_input("Retorno", value=None, format="DD/MM/YYYY", key=f"rd{n['id']}")
     h = c2.time_input("Hora", value=dt.time(9, 0), key=f"rh{n['id']}")
-    cols = st.columns(min(len(quals), 4) or 1)
+    # nomes inteiros nos botoes: 3 por linha, letra um pouco menor e quebra de linha em vez de "..."
+    st.markdown("<style>.st-key-baixa button{min-height:44px;padding:4px 8px}"
+                ".st-key-baixa button p{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;"
+                "line-height:1.2}</style>", unsafe_allow_html=True)
+    caixa = st.container(key="baixa")
+    cols = caixa.columns(min(len(quals), 3) or 1)
     for i, q in enumerate(quals):
         if cols[i % len(cols)].button(q["nome"], key=f"q{n['id']}{q['id']}", use_container_width=True):
             ret = f"{d.isoformat()} {h:%H:%M}" if d else None
