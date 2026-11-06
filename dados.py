@@ -91,7 +91,7 @@ def telefones_extras(conn, cnpj: str | None = None) -> dict[str, list[dict]]:
            + " ORDER BY criado_em DESC")                       # o mais recente (da ultima ligacao) e o principal
     out: dict[str, list[dict]] = {}
     try:
-        for r in _q(conn, sql + " ORDER BY criado_em", **({"c": cnpj} if cnpj else {})):
+        for r in _q(conn, sql, **({"c": cnpj} if cnpj else {})):
             out.setdefault(r["cnpj"], []).append(r)
     except sa.exc.DBAPIError:                      # tabela ainda nao criada
         conn.rollback()

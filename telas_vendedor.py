@@ -379,6 +379,8 @@ def painel_na_linha() -> None:
     _sincronizar()
     with st.container(border=True):
         n = V.na_linha()
+        if n and n.get("id") in ss.get("baixadas", set()):      # ja deu a baixa: a 3C ainda pode listar por alguns s
+            n = None
         if n and n.get("id"):
             ss.ultima_chamada = n                       # some das ativas ao desligar: guarda para a baixa
         if not n and ss.get("ultima_chamada"):
@@ -505,8 +507,10 @@ def baixa_na_tela(n: dict) -> None:
                 if (nota or "").strip():
                     _salvar_postit(n, q["nome"])
                 ss.pop("ultima_chamada", None)
+                ss.setdefault("baixadas", set()).add(n["id"])      # some do quadro ja: volta ao "Aguardando chamada"
                 V.sincronizar(forcar=True)
-                st.success(f"Baixa dada: {q['nome']}.")
+                ss.msg = ("ok", f"Baixa dada: {q['nome']}.")
+                st.rerun()
             except tresc.Erro3C as e:
                 st.error(f"3C: {e}")
 
