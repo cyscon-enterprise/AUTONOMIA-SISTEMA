@@ -114,9 +114,6 @@ def bloco_ia(chamada_3c: str, contexto: str, titulo: str, salvar_no_historico) -
     if feito:
         with st.expander("🧠 Resumo da ligação (IA)", expanded=False):
             st.text(feito["resumo"] or "")
-            if feito.get("transcricao"):
-                st.caption("Transcrição automática")
-                st.write(feito["transcricao"])
         return
     if st.button("🧠 Transcrever e resumir", key=f"ia{chamada_3c}"):
         try:
