@@ -721,6 +721,17 @@ def agendar(vend: dict, cnpj: str, quando: dt.datetime | None) -> dict:
     return {"ok": True, "mensagem": "Retorno agendado." if quando else "Retorno desmarcado."}
 
 
+def insight(cnpj: str) -> str:
+    """A pesquisa de abordagem (insight) da empresa, quando ela esta na base de New Names."""
+    with dados.engine().connect() as conn:
+        for tab in ("new_names_cyscon_motor_vendas", "new_names_cyscon"):
+            r = conn.execute(sa.text(f"SELECT insights_abordagem_cyscon FROM {tab} WHERE regexp_replace(cnpj, '[^0-9]', '', 'g') = :c "
+                                     "AND coalesce(insights_abordagem_cyscon, '') <> '' LIMIT 1"), {"c": cnpj}).scalar()
+            if r:
+                return str(r)
+    return ""
+
+
 def anotar_ligacao(cnpj: str, quem: str, texto: str) -> None:
     """A anotacao que o vendedor escreveu durante a ligacao entra no historico da empresa."""
     with dados.engine().begin() as conn:

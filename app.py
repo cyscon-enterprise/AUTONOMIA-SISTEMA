@@ -78,7 +78,7 @@ ss.setdefault("sessao3c", None)
 ss.setdefault("msg", None)
 
 st.markdown("""<style>
-.block-container{padding-top:3.6rem;max-width:100%;padding-left:2.5rem;padding-right:2.5rem}
+.block-container{padding-top:2.6rem;max-width:100%;padding-left:2.5rem;padding-right:2.5rem}
 [data-testid="stSidebarUserContent"]{padding-top:1rem}
 h1,h2,h3{color:#0f2a5c;letter-spacing:-.01em}
 h1{font-size:2rem !important}
@@ -91,6 +91,8 @@ h1{font-size:2rem !important}
 .selo{font-size:12px;padding:2px 8px;border-radius:5px;display:inline-block}
 .ok{background:#e7f6ec;color:#1a7f4b}.err{background:#fdecec;color:#b42318}.esp{background:#fff7ed;color:#b0562a}
 .late{color:#b42318;font-weight:600}
+/* a tela nao "apaga" quando o quadro da ligacao se atualiza (a cada 10 s) */
+[data-stale="true"]{opacity:1 !important;transition:none !important}
 .insight{background:#f5f8ff;border:1px solid #dbe6fb;border-left:3px solid #1565c0;border-radius:8px;
          padding:10px 12px;font-size:14px;line-height:1.5}
 .faixa{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,#0f2a5c,#1565c0);color:#fff;

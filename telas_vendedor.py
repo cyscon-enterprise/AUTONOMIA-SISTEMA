@@ -241,13 +241,13 @@ def sair_3c() -> None:
 def faixa_turno(inicio, chamadas: int, novos: int, carteira: int) -> None:
     """Uma linha so, fina: o turno e os tres numeros (no lugar da faixa grande + cartoes)."""
     def num(rotulo, valor):
-        return (f"<span style='margin-left:28px;color:#B9C8E6;font-size:14px'>{rotulo} "
-                f"<b style='color:#FFFFFF;font-size:20px;margin-left:4px'>{valor}</b></span>")
+        return (f"<span style='margin-left:24px;color:#B9C8E6;font-size:13px'>{rotulo} "
+                f"<b style='color:#FFFFFF;font-size:16px;margin-left:4px'>{valor}</b></span>")
     st.markdown(
-        "<div style='background:linear-gradient(90deg,#0F2A5C,#1565C0);border-radius:12px;padding:10px 20px;"
+        "<div style='background:linear-gradient(90deg,#0F2A5C,#1565C0);border-radius:10px;padding:4px 16px;margin-top:-6px;"
         "display:flex;align-items:center;flex-wrap:wrap;color:#F6F8FC'>"
-        f"<span style='font-size:18px;font-weight:700'>📞 Discador</span>"
-        f"<span style='margin-left:14px;color:#DCE6F7;font-size:14px'>turno aberto desde {inicio:%H:%M}</span>"
+        f"<span style='font-size:15px;font-weight:700'>📞 Discador</span>"
+        f"<span style='margin-left:12px;color:#DCE6F7;font-size:13px'>turno aberto desde {inicio:%H:%M}</span>"
         "<span style='flex:1'></span>"
         + num("Chamadas no turno", chamadas) + num("Entraram na carteira", novos) + num("Minha carteira", carteira)
         + "</div>", unsafe_allow_html=True)
@@ -405,20 +405,52 @@ def painel_na_linha() -> None:
         st.markdown(f"### {e.get('nome_fantasia') or e.get('nome')}")
         st.caption(" · ".join(x for x in [e.get("cidade"), e.get("estado"), e.get("entidade"), e.get("segmento"),
                                           e.get("produto") and f"ERP: {e['produto']}"] if x))
-        # o numero desta ligacao, em destaque: um ramal passado na conversa e o final DESTE telefone
-        st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:2px solid #1a7f4b;border-radius:10px;"
-                    f"padding:8px 18px;margin:2px 0 10px;font-size:26px;font-weight:700;color:#14532d'>📞 Falando com "
-                    f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
-                    unsafe_allow_html=True)
         if f["dono"] and f["dono"]["vendedor_id"] != eu()["id"]:
             st.warning(f"Este cliente já é da carteira de {f['dono']['nome']}.")
-        baixa_na_tela(n)
-        if f["historico"]:
-            st.markdown("**Contatos anteriores**")
-            linhas = "".join(f"<div><b>{br(h['quando'])}</b> · {html.escape(h.get('quem') or '')} · "
-                             f"{html.escape(h.get('texto') or h.get('etapa_para') or '')}</div>" for h in f["historico"][:4])
-            st.markdown(f"<div style='font-size:14px;line-height:1.6;color:#5b6b85'>{linhas}</div>",
+        esq, dir_ = st.columns([1.15, 1], gap="large")
+        with esq:
+            # o numero desta ligacao, em destaque: um ramal passado na conversa e o final DESTE telefone
+            st.markdown(f"<div style='display:inline-block;background:#E8F5EE;border:2px solid #1a7f4b;border-radius:10px;"
+                        f"padding:8px 18px;margin:2px 0 10px;font-size:26px;font-weight:700;color:#14532d'>📞 Falando com "
+                        f"{html.escape(dados.formatar(n.get('telefone')) or 'número não informado pela 3C')}</div>",
                         unsafe_allow_html=True)
+            baixa_na_tela(n)
+        with dir_:
+            # tudo do cliente, na hora em que ele atende: insight, faturamento, porte, contatos, historico
+            st.markdown("#### Insight")
+            ins = V.insight(n["cnpj"])
+            st.markdown(f'<div class="insight">{html.escape(ins)}</div>' if ins else
+                        '<div class="insight" style="color:#888">Sem pesquisa de insight para esta empresa ainda.</div>',
+                        unsafe_allow_html=True)
+            st.markdown("#### Dados da empresa")
+            with st.container(border=True, height=420):
+                dados_compactos(CAMPOS_NA_LINHA, e)
+            if f["historico"] or e.get("historico"):
+                st.markdown("#### Contatos anteriores")
+                with st.container(border=True, height=220):
+                    linhas = "".join(f"<div><b>{br(h['quando'])}</b> · {html.escape(h.get('quem') or '')} · "
+                                     f"{html.escape(h.get('texto') or h.get('etapa_para') or '')}</div>"
+                                     for h in f["historico"][:8])
+                    if e.get("historico"):
+                        linhas += (f"<div style='margin-top:6px'><b>Histórico anterior (CRM):</b> "
+                                   f"{html.escape(str(e['historico']))}</div>")
+                    st.markdown(f"<div style='font-size:14px;line-height:1.6;color:#344054'>{linhas}</div>",
+                                unsafe_allow_html=True)
+
+
+CAMPOS_NA_LINHA = [
+    ("nome", "Razão social"), ("nome_fantasia", "Nome fantasia"), ("cnpj", "CNPJ"),
+    ("faturamento_totvs", "Faturamento TOTVS"), ("faturamento_estimado", "Faturamento estimado"),
+    ("capital_social", "Capital social"), ("mrr", "MRR"), ("base", "Base"), ("produto", "ERP"),
+    ("entidade", "Entidade"), ("segmento", "Segmento"), ("porte_da_empresa", "Porte"),
+    ("quadro_de_funcionarios", "Funcionários"), ("funcionarios_linkedin", "Funcionários (LinkedIn)"),
+    ("cnae_descricao", "Atividade"), ("data_de_abertura", "Abertura"), ("situacao_empresa", "Situação"),
+    ("matriz", "Matriz/Filial"), ("cidade", "Cidade"), ("estado", "UF"), ("endereco", "Endereço"),
+    ("email", "E-mail"), ("site_da_empresa", "Site"),
+    ("contato_ti", "Contato TI"), ("contato_financeiro", "Contato Financeiro"), ("contato_fiscal", "Contato Fiscal"),
+    ("contato_contabil", "Contato Contábil"), ("contato_rh", "Contato RH"),
+    ("socios_rf", "Sócios (Receita)"), ("resultado", "Último resultado"),
+]
 
 
 def baixa_na_tela(n: dict) -> None:
