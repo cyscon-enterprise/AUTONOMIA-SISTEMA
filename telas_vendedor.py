@@ -288,7 +288,8 @@ def pagina_discador() -> None:
     else:
         faixa("📞", "Discador", "Ligações automáticas da campanha")
         quadro_espera("📵 Telefone desconectado", "Para começar, clique em **📞 Conectar telefone** na barra lateral. "
-                      "Depois clique em **▶ Começar a receber ligações**.")
+                      "Depois clique em **▶ Começar a receber ligações** (o discador liga para você) ou em **☎ Prefiro ligar "
+                      "manualmente** (você escolhe para quem ligar, pelas fichas).")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
 
     meus = [x for x in V.turnos_recentes(7) if x["vendedor_id"] == eu()["id"]]
@@ -388,8 +389,9 @@ def painel_na_linha() -> None:
             if s3 and tresc.status_ramal(s3["ramal"]) == 0:          # conectado, mas ainda fora da campanha
                 st.markdown("<div style='text-align:center;padding:30px 0 6px'><div style='font-size:30px;"
                             "font-weight:700;color:#1a7f4b'>📞 Ramal conectado</div><div style='color:#5b6b85;"
-                            "margin-top:8px'>Para começar a receber ligações, clique em <b>▶ Começar a receber "
-                            "ligações</b> na barra lateral.</div></div>", unsafe_allow_html=True)
+                            "margin-top:8px'>Na barra lateral, clique em <b>▶ Começar a receber ligações</b> (o "
+                            "discador liga para você) ou em <b>☎ Prefiro ligar manualmente</b> (você escolhe para quem "
+                            "ligar, pelas fichas).</div></div>", unsafe_allow_html=True)
                 return
             st.markdown("<div style='text-align:center;padding:38px 0 30px'><div style='font-size:30px;font-weight:700;"
                         "color:#1565c0'>⏳ Aguardando chamada…</div><div style='color:#5b6b85;margin-top:8px'>Quando "
