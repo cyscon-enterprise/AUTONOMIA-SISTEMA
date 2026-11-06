@@ -238,6 +238,21 @@ def sair_3c() -> None:
     ss.pop("ultima_chamada", None)
 
 
+def faixa_turno(inicio, chamadas: int, novos: int, carteira: int) -> None:
+    """Uma linha so, fina: o turno e os tres numeros (no lugar da faixa grande + cartoes)."""
+    def num(rotulo, valor):
+        return (f"<span style='margin-left:28px;color:#B9C8E6;font-size:14px'>{rotulo} "
+                f"<b style='color:#FFFFFF;font-size:20px;margin-left:4px'>{valor}</b></span>")
+    st.markdown(
+        "<div style='background:linear-gradient(90deg,#0F2A5C,#1565C0);border-radius:12px;padding:10px 20px;"
+        "display:flex;align-items:center;flex-wrap:wrap;color:#F6F8FC'>"
+        f"<span style='font-size:18px;font-weight:700'>📞 Discador</span>"
+        f"<span style='margin-left:14px;color:#DCE6F7;font-size:14px'>turno aberto desde {inicio:%H:%M}</span>"
+        "<span style='flex:1'></span>"
+        + num("Chamadas no turno", chamadas) + num("Entraram na carteira", novos) + num("Minha carteira", carteira)
+        + "</div>", unsafe_allow_html=True)
+
+
 def quadro_espera(titulo: str, texto: str) -> None:
     """O quadro fixo do Discador quando nao ha ligacao: no mesmo lugar onde a empresa aparece ao atender."""
     with st.container(border=True):
@@ -260,13 +275,8 @@ def pagina_discador() -> None:
     meu = bool(t and t["vendedor_id"] == eu()["id"])
     s3 = ss.get("sessao3c")
     if meu:
-        faixa("📞", "Discador", f"Turno aberto desde {t['inicio']:%H:%M} · tudo que o discador conectar agora é seu")
         atual = next((x for x in V.turnos_recentes(1) if x["id"] == t["id"]), {})
-        k = st.columns(3)
-        kpi(k[0], "Chamadas no turno", atual.get("chamadas", 0))
-        kpi(k[1], "Entraram na carteira", atual.get("carteira", 0))
-        kpi(k[2], "Minha carteira", len(V.carteira(eu()["id"])))
-        st.write("")
+        faixa_turno(t["inicio"], atual.get("chamadas", 0), atual.get("carteira", 0), len(V.carteira(eu()["id"])))
         if s3:
             painel_na_linha()
         else:
