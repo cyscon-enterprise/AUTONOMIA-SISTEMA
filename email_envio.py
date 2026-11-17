@@ -1,4 +1,4 @@
-"""Envio de e-mail do sistema (codigo de confirmacao do cadastro).
+"""Envio de e-mail do sistema (codigo de confirmacao do cadastro e e-mails do vendedor para o cliente).
 
 Por enquanto sai pelo Gmail da Cyscon via SMTP, com uma "senha de app" do Google (nao a senha da conta).
 Secrets: SMTP_USUARIO (o e-mail remetente) e SMTP_SENHA (a senha de app, 16 letras).
@@ -11,7 +11,7 @@ import os
 import smtplib
 import ssl
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, make_msgid
 
 REMETENTE_NOME = "AutonomIA Vendas"
 
@@ -27,28 +27,41 @@ def configurado() -> bool:
     return bool(_cfg.get("usuario") and _cfg.get("senha"))
 
 
-def enviar(para: str, assunto: str, texto: str, html: str | None = None) -> dict:
+def enviar(para: str, assunto: str, texto: str, html: str | None = None, nome_remetente: str = "",
+           responder_para: str = "", copia_oculta: bool = False) -> dict:
+    """`responder_para`: a resposta do cliente vai para esse e-mail (o do vendedor). `copia_oculta`: a caixa
+    da plataforma recebe uma copia (comprovacao do envio)."""
     if not configurado() and os.environ.get("CRM_LOCAL") == "1":
         print(f"[email local, nao enviado] para={para} assunto={assunto}", flush=True)   # teste no PC
-        return {"ok": True}
+        return {"ok": True, "message_id": make_msgid(domain="teste.local"), "remetente": "teste-local",
+                "resposta_servidor": "teste local: nao enviado"}
     if not configurado():
         return {"erro": "O envio de e-mail ainda não foi configurado no sistema. Avise o administrador."}
     msg = EmailMessage()
-    msg["From"] = formataddr((REMETENTE_NOME, _cfg["usuario"]))
+    msg["From"] = formataddr((nome_remetente or REMETENTE_NOME, _cfg["usuario"]))
     msg["To"] = para
+    if responder_para:
+        msg["Reply-To"] = responder_para
+    if copia_oculta:
+        msg["Bcc"] = _cfg["usuario"]
     msg["Subject"] = assunto
+    msg["Message-ID"] = make_msgid(domain=_cfg.get("usuario", "local@local").split("@")[-1])
     msg.set_content(texto)
     if html:
         msg.add_alternative(html, subtype="html")
     try:
         with smtplib.SMTP_SSL(_cfg["host"], _cfg["porta"], context=ssl.create_default_context(), timeout=20) as s:
             s.login(_cfg["usuario"], _cfg["senha"])
-            s.send_message(msg)
+            recusados = s.send_message(msg)
+            resposta = s.noop()
     except smtplib.SMTPAuthenticationError:
         return {"erro": "O servidor de e-mail recusou o login do sistema. Avise o administrador."}
     except (smtplib.SMTPException, OSError):
         return {"erro": "Não foi possível enviar o e-mail agora. Tente de novo em alguns minutos."}
-    return {"ok": True}
+    if recusados:
+        return {"erro": "O servidor de e-mail recusou o destinatário. Confira o endereço."}
+    return {"ok": True, "message_id": msg["Message-ID"], "remetente": _cfg["usuario"],
+            "resposta_servidor": f"aceito pelo servidor {_cfg['host']} ({resposta[0]})"}
 
 
 def enviar_codigo(para: str, nome: str, codigo: str) -> dict:

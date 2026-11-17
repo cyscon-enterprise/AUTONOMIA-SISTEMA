@@ -8,7 +8,9 @@ from urllib.parse import quote
 
 import streamlit as st
 
+import contato
 import dados
+import email_envio
 import ia_ligacoes
 import tresc3c as tresc
 import vendedores as V
@@ -16,6 +18,7 @@ import vendedores as V
 ss = st.session_state
 
 TIPOS = {"ligacao": "ligação", "email": "e-mail", "whatsapp": "WhatsApp", "reuniao": "reunião", "nota": "nota"}
+TIPOS_HIST = TIPOS | {"email_plataforma": "e-mail enviado pela plataforma", "email_resposta": "resposta do cliente ao e-mail"}
 
 
 def eu() -> dict:
@@ -73,35 +76,79 @@ def celular(tel: str) -> bool:
     return len(tel) == 11 and tel[2] == "9"
 
 
-def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: list[dict], chave: str) -> None:
-    """Botoes de e-mail (abre o e-mail do vendedor ja preenchido) e WhatsApp (abre a conversa)."""
-    vendedor = (ss.get("quem") or "").split(" ")[0]
+_EMAIL_OK = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: list[dict], chave: str,
+                   registrar=None, cnpj: str | None = None, lead_id: int | None = None) -> None:
+    """Espaco de contato da ficha: e-mail enviado DE DENTRO da plataforma (fica no historico como comprovacao,
+    com copia na caixa da plataforma e a resposta indo para o vendedor) e WhatsApp (abre a conversa e registra).
+    `registrar(tipo, texto) -> dict` grava no historico da empresa/lead."""
+    vend = eu() or {}
+    nome_v = vend.get("nome") or ss.get("quem") or ""
+    primeiro = nome_v.split(" ")[0]
     empresa = ss.get("empresa", {}).get("nome") or "Cyscon Consultoria"
-    c1, c2 = st.columns(2)
-    with c1:
-        if emails:
-            op = {f"{e} · {r}": e for e, r in emails}
-            alvo = op[st.selectbox("E-mail", list(op), key=f"em{chave}", label_visibility="collapsed")] \
-                if len(op) > 1 else emails[0][0]
-            assunto = f"{empresa} | {nome_empresa}"
-            corpo = (f"Olá, tudo bem?\n\nAqui é {vendedor}, da {empresa}, parceira TOTVS.\n\n"
-                     "Conforme conversamos, segue o contato.\n\nFico à disposição.\n\n" + (vendedor or ""))
-            st.link_button("✉ Enviar e-mail", f"mailto:{alvo}?subject={quote(assunto)}&body={quote(corpo)}",
-                           use_container_width=True)
-        else:
-            st.button("✉ Sem e-mail", disabled=True, use_container_width=True, key=f"sem_em{chave}")
-    with c2:
+    assinatura = "\n".join(x for x in [nome_v, f"{empresa} · parceira TOTVS", vend.get("celular"), vend.get("email")] if x)
+    aba_em, aba_wa = st.tabs(["✉ E-mail", "💬 WhatsApp"])
+
+    with aba_em:
+        op = {f"{e} · {r}": e for e, r in emails} | {"✏ outro e-mail…": ""}
+        escolha = st.selectbox("Para", list(op), key=f"em{chave}")
+        para = op[escolha] or st.text_input("E-mail do destinatário", key=f"emo{chave}",
+                                            placeholder="nome@empresa.com.br")
+        assunto = st.text_input("Assunto", value=f"{empresa} | {nome_empresa}", key=f"ema{chave}")
+        corpo = st.text_area("Mensagem", height=170, key=f"emc{chave}",
+                             value=(f"Olá, tudo bem?\n\nAqui é {primeiro}, da {empresa}, parceira TOTVS.\n\n"
+                                    "Conforme conversamos, segue o contato.\n\nFico à disposição.\n\n" + assinatura))
+        if st.button("✉ Enviar e-mail", type="primary", use_container_width=True, key=f"emb{chave}"):
+            para = (para or "").strip()
+            if not _EMAIL_OK.fullmatch(para):
+                st.error("Confira o e-mail do destinatário.")
+            elif not corpo.strip():
+                st.error("Escreva a mensagem.")
+            else:
+                with st.spinner("Enviando…"):
+                    r = email_envio.enviar(para, assunto.strip() or nome_empresa, corpo,
+                                           nome_remetente=f"{nome_v} | {empresa}" if nome_v else empresa,
+                                           responder_para=vend.get("email") or "", copia_oculta=True)
+                if r.get("erro"):
+                    st.error(r["erro"])
+                else:
+                    contato.registrar_envio(cnpj, lead_id, vend, para, assunto, corpo, r)
+                    if registrar:
+                        registrar("email_plataforma", f"De: {r.get('remetente')}\nPara: {para}\nAssunto: {assunto}\n"
+                                                      f"Comprovante: {r.get('message_id')}\n\n{corpo}")
+                    ss.msg = ("ok", f"E-mail enviado para {para} e registrado no histórico.")
+                    st.rerun()
+        st.caption("Sai pelo e-mail da plataforma, com o seu nome; a resposta do cliente chega no seu e-mail. "
+                   "Fica registrado no histórico e vale como tentativa de contato.")
+        with st.popover("📩 O cliente respondeu", use_container_width=True):
+            with st.form(f"resp{chave}", clear_on_submit=True):
+                resp = st.text_area("Cole aqui a resposta do cliente (e quem respondeu)")
+                if st.form_submit_button("Registrar resposta", type="primary", use_container_width=True):
+                    if not resp.strip():
+                        st.error("Cole a resposta.")
+                    elif registrar:
+                        avisar(registrar("email_resposta", resp.strip()))
+                        st.rerun()
+
+    with aba_wa:
         cels = [t for t in telefones if celular(t["tel"])]
-        if cels:
-            op = {f"{t['exibir']} · {', '.join(t['rotulos'])}": t["tel"] for t in cels}
-            tel = op[st.selectbox("WhatsApp", list(op), key=f"wa{chave}", label_visibility="collapsed")] \
-                if len(op) > 1 else cels[0]["tel"]
-            texto = f"Olá! Aqui é {vendedor}, da {empresa}, parceira TOTVS. Tudo bem?"
-            st.link_button("💬 Conversar no WhatsApp", f"https://wa.me/55{tel}?text={quote(texto)}",
-                           use_container_width=True)
+        if not cels:
+            st.caption("WhatsApp precisa de um celular (11 dígitos começando com 9). "
+                       "Inclua um em ➕ Incluir telefone.")
         else:
-            st.button("💬 Sem celular", disabled=True, use_container_width=True, key=f"sem_wa{chave}",
-                      help="WhatsApp precisa de um celular (11 dígitos começando com 9). Inclua um em ➕ Incluir telefone.")
+            op = {f"{t['exibir']} · {', '.join(t['rotulos'])}": t for t in cels}
+            t = op[st.selectbox("Celular", list(op), key=f"wa{chave}")]
+            texto = st.text_area("Mensagem", height=110, key=f"wat{chave}",
+                                 value=f"Olá! Aqui é {primeiro}, da {empresa}, parceira TOTVS. Tudo bem?")
+            c1, c2 = st.columns(2)
+            c1.link_button("💬 Abrir conversa", f"https://wa.me/55{t['tel']}?text={quote(texto)}",
+                           use_container_width=True)
+            if c2.button("✔ Registrar que mandei", use_container_width=True, key=f"wab{chave}") and registrar:
+                avisar(registrar("whatsapp", f"WhatsApp para {t['exibir']}:\n{texto}"))
+                st.rerun()
+            st.caption("Abre o WhatsApp com a mensagem pronta. Depois de mandar, clique em Registrar.")
 
 
 def incluir_telefone(cnpj: str, lead_id: int | None = None) -> None:
@@ -742,7 +789,7 @@ def ficha_cliente(cnpj: str) -> None:
                                  lambda t, c=cnpj: V.registrar_resumo_ia(c, t))
                 else:
                     st.markdown(f"**{br(x['quando'])}**{(' · ' + x['quem']) if x.get('quem') else ''} · "
-                                f"{TIPOS.get(x.get('tipo'), x.get('tipo') or '')}")
+                                f"{TIPOS_HIST.get(x.get('tipo'), x.get('tipo') or '')}")
                     if x.get("etapa_para"):
                         st.caption(f"{x.get('etapa_de') or '—'} → {x['etapa_para']}")
                     if x.get("texto"):
@@ -753,7 +800,8 @@ def ficha_cliente(cnpj: str) -> None:
                 st.text(e["historico"])
     with dir_:
         st.markdown("#### Contato")
-        botoes_contato(e.get("nome_fantasia") or e.get("nome") or "", emails_de(e), f["telefones"], cnpj)
+        botoes_contato(e.get("nome_fantasia") or e.get("nome") or "", emails_de(e), f["telefones"], cnpj,
+                       lambda tipo, texto: V.registrar(eu(), cnpj, tipo, texto), cnpj=cnpj)
         st.markdown("#### Ligar pela 3C")
         controle_ligacao_manual()
         if not f["telefones"]:

@@ -269,7 +269,7 @@ def agendar(lead_id: int, quando: dt.datetime | None, quem: str, nota: str = "")
 
 
 def interagir(lead_id: int, tipo: str, texto: str, quem: str) -> dict:
-    if tipo not in {"ligacao", "email", "whatsapp", "reuniao", "nota"}:
+    if tipo not in {"ligacao", "email", "email_plataforma", "email_resposta", "whatsapp", "reuniao", "nota"}:
         return {"erro": f"tipo invalido: {tipo}"}
     with engine().begin() as conn:
         atual = _card(conn, lead_id)

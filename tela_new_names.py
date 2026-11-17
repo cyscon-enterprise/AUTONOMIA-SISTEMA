@@ -191,7 +191,7 @@ def ver_ficha(lead_id: int) -> None:
                 if tipo == "lig":
                     item_ligacao(x)
                 else:
-                    st.markdown(f"**{br(x['quando'])}**{(' · ' + x['quem']) if x.get('quem') else ''} · {x.get('tipo') or ''}")
+                    st.markdown(f"**{br(x['quando'])}**{(' · ' + x['quem']) if x.get('quem') else ''} · {telas_vendedor.TIPOS_HIST.get(x.get('tipo'), x.get('tipo') or '')}")
                     if x.get("etapa_para"):
                         st.caption(f"{x.get('etapa_de') or '—'} → {x['etapa_para']}")
                     if x.get("texto"):
@@ -209,7 +209,9 @@ def ver_ficha(lead_id: int) -> None:
             bloco_ligacao(aberta)
         st.markdown("#### Contato")
         telas_vendedor.botoes_contato(L.get("nome_fantasia") or L.get("razao_social") or "",
-                                      telas_vendedor.emails_de(L), f["telefones"], f"nn{lead_id}")
+                                      telas_vendedor.emails_de(L), f["telefones"], f"nn{lead_id}",
+                                      lambda tipo, texto: dados.interagir(lead_id, tipo, texto, ss.quem),
+                                      cnpj=L.get("cnpj"), lead_id=lead_id)
         st.markdown("#### Ligar pela 3C")
         telas_vendedor.controle_ligacao_manual()
         if not f["telefones"]:

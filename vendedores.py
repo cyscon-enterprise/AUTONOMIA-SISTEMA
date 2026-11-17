@@ -822,7 +822,7 @@ def registrar_resumo_ia(cnpj: str, texto: str) -> None:
 def registrar(vend: dict, cnpj: str, tipo: str, texto: str) -> dict:
     if not _pode(vend, cnpj):
         return {"erro": "Esse cliente não está na sua carteira."}
-    if tipo not in {"ligacao", "email", "whatsapp", "reuniao", "nota"}:
+    if tipo not in {"ligacao", "email", "email_plataforma", "email_resposta", "whatsapp", "reuniao", "nota"}:
         return {"erro": f"tipo invalido: {tipo}"}
     if not (texto or "").strip():
         return {"erro": "Escreva o que aconteceu."}
