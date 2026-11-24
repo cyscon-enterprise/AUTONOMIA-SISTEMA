@@ -909,6 +909,29 @@ def ficha_cliente(cnpj: str) -> None:
                       ("contato_fiscal", "Contato Fiscal"), ("contato_contabil", "Contato Contábil"),
                       ("socios_rf", "Sócios (Receita)")]
             dados_compactos(campos, e)
+        grav = [c for c in f["chamadas"] if c.get("gravada")]
+        if grav:                                       # fora da caixa rolavel do historico: ninguem precisa procurar
+            st.markdown(f"#### 🎧 Gravações ({len(grav)})")
+            with st.container(border=True):
+                for i, x in enumerate(grav):
+                    st.markdown(f"**{br(x['quando'])}** · {dados.formatar(x.get('telefone'))} · "
+                                f"{x.get('duracao') and 'conversa ' + x['duracao'] or 'sem conversa'} · "
+                                f"{x.get('qualificacao') or 'sem qualificação'}")
+                    chave = f"ouvir{x['chamada_3c']}"
+                    if ss.get(chave):
+                        try:
+                            audio, fmt = _audio(x["chamada_3c"])
+                            st.audio(audio, format=fmt)
+                        except tresc.Erro3C as err:
+                            st.caption(f"Gravação: {err}")
+                    elif st.button("▶ ouvir gravação", key=chave + "b"):
+                        ss[chave] = True
+                        st.rerun()
+                    bloco_ia(x["chamada_3c"], f"{e.get('nome_fantasia') or e.get('nome')} ({e.get('cidade') or ''})",
+                             f"Resumo da ligação de {br(x['quando'])} para {dados.formatar(x.get('telefone'))}:",
+                             lambda t, c=cnpj: V.registrar_resumo_ia(c, t))
+                    if i < len(grav) - 1:
+                        st.divider()
         st.markdown("#### Histórico")
         linha = [("ch", c["quando"], c) for c in f["chamadas"]]
         linha += [("h", h["quando"], h) for h in f["historico"] if not str(h.get("texto") or "").startswith("Discador 3C")]
@@ -923,19 +946,7 @@ def ficha_cliente(cnpj: str) -> None:
                     st.caption(" · ".join(v for v in [x.get("qualificacao") or "sem qualificação", x.get("resultado"),
                                                       x.get("duracao") and f"conversa {x['duracao']}"] if v))
                     if x.get("gravada"):
-                        chave = f"ouvir{x['chamada_3c']}"
-                        if ss.get(chave):
-                            try:
-                                audio, fmt = _audio(x["chamada_3c"])
-                                st.audio(audio, format=fmt)
-                            except tresc.Erro3C as err:
-                                st.caption(f"Gravação: {err}")
-                        elif st.button("▶ ouvir gravação", key=chave + "b"):
-                            ss[chave] = True
-                            st.rerun()
-                        bloco_ia(x["chamada_3c"], f"{e.get('nome_fantasia') or e.get('nome')} ({e.get('cidade') or ''})",
-                                 f"Resumo da ligação de {br(x['quando'])} para {dados.formatar(x.get('telefone'))}:",
-                                 lambda t, c=cnpj: V.registrar_resumo_ia(c, t))
+                        st.caption("🎧 gravada · ouça na seção Gravações, acima")
                 else:
                     st.markdown(f"**{br(x['quando'])}**{(' · ' + x['quem']) if x.get('quem') else ''} · "
                                 f"{TIPOS_HIST.get(x.get('tipo'), x.get('tipo') or '')}")
