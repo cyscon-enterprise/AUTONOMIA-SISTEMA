@@ -87,6 +87,28 @@ def campanhas_com_contatos() -> set[int]:
     return ids
 
 
+def estado_campanha(campanha_id) -> dict | None:
+    """O que o discador tem para ligar nesta campanha: {nome, pausada, fora_do_horario, horario, listas, contatos,
+    problema}. `problema` e "" quando esta tudo certo, ou "sem_lista" / "pausada" / "horario" (o motivo de nao haver
+    ligacoes). None se a 3C nao responder (nao afirmamos nada sem saber)."""
+    try:
+        cid = int(campanha_id)
+        camp = next((c for c in _lista(_req("GET", "/campaigns", params={"per_page": 100})) if int(c["id"]) == cid), None)
+        if camp is None:
+            return None
+        listas = _lista(_req("GET", f"/campaigns/{cid}/lists", params={"per_page": 50}))
+    except (Erro3C, ValueError, TypeError, KeyError):
+        return None
+    ativas = [l for l in listas if not l.get("paused")]
+    contatos = sum(int(l.get("total") or 0) for l in ativas)
+    fora = camp.get("is_on_active_time") is False
+    problema = ("pausada" if camp.get("paused") else "sem_lista" if contatos <= 0
+                else "horario" if fora else "")
+    return {"nome": camp.get("name") or "", "pausada": bool(camp.get("paused")), "fora_do_horario": fora,
+            "horario": f"{str(camp.get('start_time') or '')[:5]} às {str(camp.get('end_time') or '')[:5]}".strip(),
+            "listas": len(ativas), "contatos": contatos, "problema": problema}
+
+
 def tem_token() -> bool:
     return bool(_TOKEN["v"])
 

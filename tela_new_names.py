@@ -219,6 +219,10 @@ def ver_ficha(lead_id: int) -> None:
         for t in f["telefones"]:
             if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{lead_id}{t['tel']}",
                          use_container_width=True):
+                outro = telas_vendedor.linha_ocupada_por_outro()
+                if outro:
+                    telas_vendedor.aviso_linha_ocupada(outro)
+                    st.rerun()
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
                     r = dados.ligar(lead_id, t["tel"], ss.quem, ramal_atual())
                     if r.get("erro"):

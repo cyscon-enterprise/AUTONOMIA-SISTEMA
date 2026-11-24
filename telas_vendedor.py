@@ -103,9 +103,59 @@ def erro_ligacao(msg: str, ramal: str | None = None) -> None:
 
 
 def abrir_dialogo_ligacao() -> None:
+    sem = ss.pop("dialogo_sem_lista", None)
+    if sem:
+        _dialogo_sem_lista(sem)
+        return
+    linha = ss.pop("dialogo_linha", None)
+    if linha:
+        _dialogo_linha(linha)
+        return
     info = ss.pop("dialogo_ligacao", None)
     if info:
         _dialogo_ligacao(info)
+
+
+# ---------------------------------------------------------------- linha unica: so um usuario na 3C por vez
+
+def linha_ocupada_por_outro() -> dict | None:
+    """O turno aberto de OUTRO usuario (a 3C tem um ramal so), ou None se a linha esta livre ou e minha."""
+    t = V.turno_aberto()
+    return t if t and t["vendedor_id"] != eu()["id"] else None
+
+
+def explicar_linha_ocupada(t: dict, em_ligacao: bool | None) -> dict:
+    mins = max(0, int((dados.agora() - t["inicio"]).total_seconds() // 60))
+    onde = ("**está em ligação agora**" if em_ligacao else "está com a linha")
+    return {"titulo": "Linha ocupada",
+            "causa": f"**{t['nome']}** {onde}: o turno dele no discador começou às {t['inicio']:%H:%M} (há {mins} min). "
+                     "A 3C tem um único ramal, então só um usuário usa a linha por vez.",
+            "passos": [f"Espere {t['nome'].split()[0]} terminar a ligação e encerrar o turno.",
+                       "Tente de novo em alguns minutos: assim que a linha ficar livre, você conecta normalmente.",
+                       "Se o turno parecer esquecido (aberto há muitas horas), peça ao administrador para encerrá-lo em "
+                       "Gestão → Turnos do discador."]}
+
+
+@st.dialog("Linha ocupada")
+def _dialogo_linha(info: dict) -> None:
+    st.markdown(f"#### {info['titulo']}: outro usuário está em ligação")
+    st.write(info["causa"])
+    st.markdown("**O que fazer:**")
+    for i, p in enumerate(info["passos"], 1):
+        st.markdown(f"{i}. {p}")
+    if st.button("Entendi", type="primary", use_container_width=True):
+        st.rerun()
+
+
+def aviso_linha_ocupada(t: dict) -> None:
+    """Guarda o aviso para abrir como pop-up na proxima tela (o clique que tentou conectar ou ligar nao segue)."""
+    em_lig = None
+    try:
+        s = tresc.status_ramal(tresc.ramal_padrao())
+        em_lig = s in (2, 3) if s is not None else None
+    except Exception:                       # 3C fora do ar: o aviso sai igual, sem o detalhe da ligacao
+        em_lig = None
+    ss.dialogo_linha = explicar_linha_ocupada(t, em_lig)
 
 
 def faixa(icone: str, titulo: str, sub: str = "", numeros: list[tuple[str, object]] | None = None) -> None:
@@ -343,7 +393,11 @@ def _abrir_turno() -> bool:
         return True
     r = V.iniciar_turno(eu())
     if r.get("erro"):
-        ss.erro3c = r["erro"]
+        outro = linha_ocupada_por_outro()
+        if outro:
+            aviso_linha_ocupada(outro)
+        else:
+            ss.erro3c = r["erro"]
         return False
     return True
 
@@ -362,11 +416,10 @@ def _conectar(ramal: str | None = None, senha: str | None = None) -> None:
 def conectar_3c_lateral() -> None:
     """Barra lateral, antes de conectar: um clique (senha da 3C guardada nos Secrets) ou, se ela nao
     estiver configurada, o ramal e a senha."""
+    abrir_dialogo_ligacao()
     t = V.turno_aberto()
     if t and t["vendedor_id"] != eu()["id"]:
-        st.caption(f"O discador está com **{t['nome']}** desde {t['inicio']:%H:%M}. "
-                   "A 3C tem um ramal só: espere o turno dele acabar.")
-        return
+        st.caption(f"🔴 Linha ocupada: **{t['nome']}** está com a linha desde {t['inicio']:%H:%M}.")
     if tresc.tem_senha_ramal():
         if st.button("📞 Conectar telefone", type="primary", use_container_width=True):
             with st.spinner("Conectando na 3C…"):
@@ -451,13 +504,75 @@ def pagina_discador() -> None:
                         unsafe_allow_html=True)
 
 
+# ---------------------------------------------------------------- campanha sem lista: avisar em vez de deixar esperando
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _estado_campanha(campanha_id: int) -> dict | None:
+    return tresc.estado_campanha(campanha_id)
+
+
+def explicar_sem_lista(est: dict, com_lista: list[str]) -> dict:
+    motivo = {"sem_lista": f"A campanha **{est['nome']}** não tem nenhuma lista de telefones carregada na 3C, então o "
+                           "discador não tem para quem ligar.",
+              "pausada": (f"A campanha **{est['nome']}** está **pausada** na 3C"
+                          + (" e também **não tem nenhuma lista de telefones** carregada" if est["contatos"] <= 0 else "")
+                          + ", então o discador não liga."),
+              "horario": f"A campanha **{est['nome']}** está **fora do horário** de funcionamento"
+                         f"{' (' + est['horario'] + ')' if est.get('horario') else ''}, então o discador não liga agora."
+              }[est["problema"]]
+    passos = []
+    if est["problema"] == "sem_lista":
+        passos.append("Avise o administrador para **carregar uma lista de contatos** nessa campanha (3C Plus → Campanhas → "
+                      f"{est['nome']} → Listas) e deixá-la ativa.")
+    elif est["problema"] == "pausada":
+        passos.append("Avise o administrador para "
+                      + ("**carregar uma lista de contatos e reativar a campanha**" if est["contatos"] <= 0
+                         else "**reativar a campanha**")
+                      + f" **{est['nome']}** na 3C Plus (Campanhas).")
+    else:
+        passos.append("Volte a tentar dentro do horário da campanha, ou peça ao administrador para ajustar o horário.")
+    if com_lista:
+        passos.append("Enquanto isso, clique em **⏸ Parar de receber ligações** e comece por uma campanha que tem lista: "
+                      + ", ".join(f"**{n}**" for n in com_lista) + ".")
+    passos.append("Ou use **☎ Prefiro ligar manualmente** e ligue pelos botões ☎ das fichas (Minha carteira e Funil New Names).")
+    return {"titulo": "Sem lista para ligar", "causa": motivo, "passos": passos}
+
+
+@st.dialog("Sem lista para ligar")
+def _dialogo_sem_lista(info: dict) -> None:
+    st.markdown("#### O discador não vai ligar")
+    st.write(info["causa"])
+    st.markdown("**O que fazer:**")
+    for i, p in enumerate(info["passos"], 1):
+        st.markdown(f"{i}. {p}")
+    if st.button("Entendi", type="primary", use_container_width=True):
+        st.rerun()
+
+
+def _campanhas_com_lista_nomes(s3: dict) -> list[str]:
+    boas = _com_contatos()
+    return [c["nome"] for c in (s3.get("campanhas") or []) if int(c["id"]) in boas]
+
+
+def bloqueia_sem_lista(s3: dict, campanha_id) -> bool:
+    """True (e guarda o aviso) se a campanha nao tem para quem ligar: nao adianta entrar e ficar esperando."""
+    est = _estado_campanha(int(campanha_id))
+    if est and est["problema"]:
+        ss.dialogo_sem_lista = explicar_sem_lista(est, _campanhas_com_lista_nomes(s3))
+        return True
+    return False
+
+
 PAGINA_DISCADOR = None          # o st.Page do Discador (app.py preenche): "Comecar a receber ligacoes" leva para la
 
 
 def entrar_modo(s3: dict, campanha, manual: bool) -> None:
+    if not manual and bloqueia_sem_lista(s3, campanha):
+        st.rerun()                                      # o pop-up "Sem lista para ligar" abre na proxima tela
     try:
         tresc.entrar_campanha(s3["token"], campanha, manual=manual)
         s3["modo"] = "manual" if manual else "discador"
+        s3["campanha_ativa"] = campanha
     except tresc.Erro3C as e:
         st.error(f"3C: {e}")
         return
@@ -558,6 +673,17 @@ def painel_na_linha() -> None:
                             "margin-top:8px'>Na barra lateral, clique em <b>▶ Começar a receber ligações</b> (o "
                             "discador liga para você) ou em <b>☎ Prefiro ligar manualmente</b> (você escolhe para quem "
                             "ligar, pelas fichas).</div></div>", unsafe_allow_html=True)
+                return
+            camp = s3.get("campanha_ativa") or s3.get("campanha")
+            est = _estado_campanha(int(camp)) if camp and s3.get("modo") != "manual" else None
+            if est and est["problema"]:
+                info = explicar_sem_lista(est, _campanhas_com_lista_nomes(s3))
+                st.markdown("<div style='text-align:center;padding:26px 0 4px'><div style='font-size:28px;font-weight:700;"
+                            "color:#b45309'>⚠ Não há ninguém para ligar</div></div>", unsafe_allow_html=True)
+                st.warning(info["causa"])
+                st.markdown("**O que fazer:**")
+                for i, p in enumerate(info["passos"], 1):
+                    st.markdown(f"{i}. {p}")
                 return
             st.markdown("<div style='text-align:center;padding:38px 0 30px'><div style='font-size:30px;font-weight:700;"
                         "color:#1565c0'>⏳ Aguardando chamada…</div><div style='color:#5b6b85;margin-top:8px'>Quando "
@@ -970,6 +1096,10 @@ def ficha_cliente(cnpj: str) -> None:
         for t in f["telefones"]:
             if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{cnpj}{t['tel']}",
                          use_container_width=True):
+                outro = linha_ocupada_por_outro()
+                if outro:
+                    aviso_linha_ocupada(outro)
+                    st.rerun()
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
                     try:
                         tresc.ligar("55" + t["tel"], ramal)
