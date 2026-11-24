@@ -125,15 +125,13 @@ def linha_ocupada_por_outro() -> dict | None:
 
 
 def explicar_linha_ocupada(t: dict, em_ligacao: bool | None) -> dict:
-    mins = max(0, int((dados.agora() - t["inicio"]).total_seconds() // 60))
-    onde = ("**está em ligação agora**" if em_ligacao else "está com a linha")
-    return {"titulo": "Linha ocupada",
-            "causa": f"**{t['nome']}** {onde}: o turno dele no discador começou às {t['inicio']:%H:%M} (há {mins} min). "
+    # so o gestor ve quem esta com o ramal; os demais recebem apenas o aviso generico
+    return {"titulo": "Ramal ocupado",
+            "causa": "O ramal está ocupado por outro usuário. "
                      "A 3C tem um único ramal, então só um usuário usa a linha por vez.",
-            "passos": [f"Espere {t['nome'].split()[0]} terminar a ligação e encerrar o turno.",
-                       "Tente de novo em alguns minutos: assim que a linha ficar livre, você conecta normalmente.",
-                       "Se o turno parecer esquecido (aberto há muitas horas), peça ao administrador para encerrá-lo em "
-                       "Gestão → Turnos do discador."]}
+            "passos": ["Espere o outro usuário terminar a ligação e encerrar o turno.",
+                       "Tente de novo em alguns minutos: assim que o ramal ficar livre, você conecta normalmente.",
+                       "Se continuar ocupado por muito tempo, avise o gestor."]}
 
 
 @st.dialog("Linha ocupada")
@@ -413,13 +411,21 @@ def _conectar(ramal: str | None = None, senha: str | None = None) -> None:
                      else f"Não consegui conectar na 3C: {msg}")
 
 
+@st.fragment(run_every="60s")
+def batimento() -> None:
+    """Enquanto a pagina do dono do turno estiver aberta, avisa o servidor. Aba fechada = sem sinal = o turno
+    fecha sozinho (V.INATIVO_MIN) e libera o ramal."""
+    V.sinal_turno(eu()["id"])
+
+
 def conectar_3c_lateral() -> None:
     """Barra lateral, antes de conectar: um clique (senha da 3C guardada nos Secrets) ou, se ela nao
     estiver configurada, o ramal e a senha."""
     abrir_dialogo_ligacao()
     t = V.turno_aberto()
     if t and t["vendedor_id"] != eu()["id"]:
-        st.caption(f"🔴 Linha ocupada: **{t['nome']}** está com a linha desde {t['inicio']:%H:%M}.")
+        st.caption(f"🔴 Ramal ocupado por **{t['nome']}** desde {t['inicio']:%H:%M}." if eu().get("admin")
+                   else "🔴 Ramal ocupado por outro usuário.")
     if tresc.tem_senha_ramal():
         if st.button("📞 Conectar telefone", type="primary", use_container_width=True):
             with st.spinner("Conectando na 3C…"):
@@ -481,8 +487,11 @@ def pagina_discador() -> None:
                 st.rerun()
     elif t:
         faixa("📞", "Discador", "Ligações automáticas da campanha")
-        st.warning(f"O discador está com **{t['nome']}** desde {t['inicio']:%H:%M}. A 3C tem um usuário só: "
-                   "espere o turno dele acabar.")
+        if eu().get("admin"):
+            st.warning(f"Ramal ocupado por **{t['nome']}** desde {t['inicio']:%H:%M}. Se ela/ele fechou a página, o "
+                       "turno fecha sozinho em poucos minutos; ou encerre em Gestão → Turnos do discador.")
+        else:
+            st.warning("Ramal ocupado por outro usuário. A 3C tem um usuário só: espere o turno dele acabar.")
     else:
         faixa("📞", "Discador", "Ligações automáticas da campanha")
         quadro_espera("📵 Telefone desconectado", "Para começar, clique em **📞 Conectar telefone** na barra lateral. "
@@ -742,6 +751,8 @@ def cartao_ligacao(n: dict, onde: str = "tela") -> None:
                 import ia_auto
                 cadastro = "\n".join(f"{rot}: {e.get(col)}" for col, rot in
                                      CAMPOS_NA_LINHA + [("historico", "Histórico no CRM")] if e.get(col))
+                if not e.get("site_da_empresa"):
+                    cadastro += "\nSite: NÃO TEM site cadastrado"
                 contatos = "\n".join(f"{br(h['quando'])} {h.get('texto') or ''}" for h in f["historico"][:6])
                 ia_auto.preparar_insight(n["cnpj"], f"{cadastro}\n\nÚltimos contatos:\n{contatos}")
                 st.markdown('<div class="insight" style="color:#5b6b85">🧠 Preparando o insight desta empresa… '
@@ -1398,7 +1409,11 @@ def pagina_gestao() -> None:
     with a_turnos:
         t = V.turno_aberto()
         if t:
-            st.warning(f"Turno aberto: {t['nome']} desde {t['inicio']:%d/%m %H:%M}")
+            ult = t.get("ultimo_sinal")
+            sinal = (f" · último sinal da página há {max(0, int((dados.agora() - ult).total_seconds() // 60))} min"
+                     if ult else " · sem sinal registrado")
+            st.warning(f"Turno aberto: {t['nome']} desde {t['inicio']:%d/%m %H:%M}{sinal}. "
+                       f"Fecha sozinho depois de {V.INATIVO_MIN} min sem sinal.")
             if st.button("Encerrar este turno"):
                 avisar(V.encerrar_turno(eu(), forcar=True))
                 st.rerun()

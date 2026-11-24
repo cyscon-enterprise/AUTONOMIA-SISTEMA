@@ -658,6 +658,7 @@ with st.sidebar:
             painel_contrato(_ctr, "sb")
     elif _ctr and _ctr["status"] == "enviado":
         st.caption("📄 Contrato enviado, aguardando conferência do gestor.")
+    telas_vendedor.batimento()                          # sinal de vida: aba fechada libera o ramal sozinho
     # tudo da 3C fica aqui: o telefone web (WebRTC) fora das paginas nao cai ao trocar de pagina
     if ss.get("sessao3c"):
         st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")

@@ -44,6 +44,7 @@ ETAPA_DA_QUALIF = {"retornar": "retornar", "enviar e-mail": "enviar e-mail",
                    "agendar reuniao": "reunião agendada", "ganho": "fechado"}
 ETAPAS_INICIAIS = {"", "sem contato"}
 TURNO_MAX_H = 12                   # turno esquecido aberto fecha sozinho depois disso
+INATIVO_MIN = 5                    # sem sinal da pagina do vendedor por tanto tempo: o turno fecha (aba fechada)
 SYNC_INTERVALO_S = 60
 
 DDL = [
@@ -62,6 +63,7 @@ DDL = [
         inicio TIMESTAMP NOT NULL,
         fim TIMESTAMP,
         fechado_por VARCHAR(60))""",
+    "ALTER TABLE crm_discador_turnos ADD COLUMN IF NOT EXISTS ultimo_sinal TIMESTAMP",
     """CREATE TABLE IF NOT EXISTS crm_discador_chamadas (
         chamada_3c VARCHAR(40) PRIMARY KEY,
         cnpj VARCHAR(14),
@@ -769,7 +771,18 @@ def lista() -> list[dict]:
 
 # ---------------------------------------------------------------- turno no discador
 
+def sinal_turno(vendedor_id: int) -> None:
+    """Batimento: a pagina do dono do turno avisa que continua aberta (a cada ~60 s)."""
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("UPDATE crm_discador_turnos SET ultimo_sinal = :a "
+                             "WHERE fim IS NULL AND vendedor_id = :v"), {"a": dados.agora(), "v": vendedor_id})
+
+
 def _fechar_esquecidos(conn) -> None:
+    # aba fechada sem encerrar: sem sinal ha INATIVO_MIN minutos, o turno acaba no ultimo sinal
+    conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = COALESCE(ultimo_sinal, inicio), "
+                         "fechado_por = 'inatividade' WHERE fim IS NULL AND COALESCE(ultimo_sinal, inicio) < :lim"),
+                 {"lim": dados.agora() - dt.timedelta(minutes=INATIVO_MIN)})
     conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = inicio + make_interval(hours => :h), "
                          "fechado_por = 'automatico' WHERE fim IS NULL AND inicio < :lim"),
                  {"h": TURNO_MAX_H, "lim": dados.agora() - dt.timedelta(hours=TURNO_MAX_H)})
@@ -792,10 +805,12 @@ def iniciar_turno(vend: dict) -> dict:
         if r:
             if r[0]["vendedor_id"] == vend["id"]:
                 return {"ok": True, "mensagem": "Seu turno já está aberto."}
-            return {"erro": f"O discador está com {r[0]['nome']} desde {r[0]['inicio']:%H:%M}. "
-                            "A 3C tem um usuário só: espere ele encerrar o turno."}
-        conn.execute(sa.text("INSERT INTO crm_discador_turnos (vendedor_id, inicio) VALUES (:v, :i)"),
-                     {"v": vend["id"], "i": dados.agora()})
+            quem = (f"{r[0]['nome']} desde {r[0]['inicio']:%H:%M}" if vend.get("admin")
+                    else "outro usuário")                      # so o gestor ve quem esta ligado
+            return {"erro": f"Ramal ocupado por {quem}. A 3C tem um usuário só: espere ele encerrar o turno."}
+        agora = dados.agora()
+        conn.execute(sa.text("INSERT INTO crm_discador_turnos (vendedor_id, inicio, ultimo_sinal) VALUES (:v, :i, :i)"),
+                     {"v": vend["id"], "i": agora})
     return {"ok": True, "mensagem": "Turno aberto. Tudo que o discador conectar agora é seu."}
 
 
