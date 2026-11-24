@@ -671,6 +671,45 @@ def pagina_carteiras_todos() -> None:
     _carteira(todos=True)
 
 
+def pagina_pool() -> None:
+    """So do administrador: o pool de contas (empresas sem vendedor) e a atribuicao a um vendedor."""
+    mostrar_msg()
+    r = V.pool_resumo()
+    faixa("🗃", "Pool de contas", "empresas ainda sem vendedor",
+          [("No pool", f"{r['total']:,}".replace(",", ".")), ("New Names sem dono", len(r["new_names"]))])
+    vends = [v for v in V.lista() if v["ativo"] and not v["admin"]]
+    if not vends:
+        st.info("Não há vendedores ativos para receber clientes.")
+        return
+    op = {v["nome"]: v["id"] for v in vends}
+    aba_nn, aba_busca = st.tabs([f"New Names sem dono ({len(r['new_names'])})", "Buscar no pool"])
+
+    def atribuir(escolhas: dict[str, str], chave: str) -> None:
+        sel = st.multiselect("Clientes", list(escolhas), key=f"sel_{chave}")
+        para = st.selectbox("Atribuir a", list(op), key=f"para_{chave}")
+        if st.button("Atribuir selecionados", type="primary", key=f"btn_{chave}", disabled=not sel):
+            avisar(V.atribuir_lote(eu(), [escolhas[s] for s in sel], op[para]))
+            st.rerun()
+
+    with aba_nn:
+        if r["new_names_sem_cnpj"]:
+            st.caption(f"{r['new_names_sem_cnpj']} lead(s) do funil sem CNPJ não entram no pool (a carteira é por CNPJ).")
+        if not r["new_names"]:
+            st.info("Nenhum New Names sem dono: todos estão com algum vendedor.")
+        else:
+            atribuir({f"{x['nome']} · {x['cidade'] or ''}/{x['estado'] or ''} · {x['cnpj']}": x["cnpj"]
+                      for x in r["new_names"]}, "nn")
+    with aba_busca:
+        busca = st.text_input("Buscar empresa, CNPJ ou cidade (mín. 3 letras)", key="pool_busca")
+        achou = V.pool_buscar(busca)
+        if busca.strip() and len(busca.strip()) >= 3 and not achou:
+            st.info("Nada encontrado no pool para essa busca.")
+        elif achou:
+            st.caption(f"{len(achou)} resultado(s) (máx. 40). Refine a busca para ver outros.")
+            atribuir({f"{x['nome']} · {x['cidade'] or ''}/{x['estado'] or ''} · {x['cnpj']}": x["cnpj"]
+                      for x in achou}, "busca")
+
+
 def _carteira(todos: bool) -> None:
     mostrar_msg()
     _sincronizar()
@@ -1096,9 +1135,18 @@ def pagina_gestao() -> None:
                             avisar(V.trocar_senha(v["id"], nova))
                             st.rerun()
                 if v["id"] != eu()["id"]:
-                    if c3.button("Reativar" if not v["ativo"] else "Desativar", key=f"at{v['id']}"):
-                        avisar(V.ativar(v["id"], not v["ativo"]))
-                        st.rerun()
+                    if not v["ativo"]:
+                        if c3.button("Reativar", key=f"at{v['id']}"):
+                            avisar(V.ativar(v["id"], True))
+                            st.rerun()
+                    else:
+                        with c3.popover("Desativar"):
+                            n = V.qtd_carteira(v["id"])
+                            st.warning(f"{v['nome']} perde o acesso e os **{n} cliente(s)** dele voltam para o pool de "
+                                       "contas, sem dono. O histórico fica registrado.")
+                            if st.button("Confirmar desativação", key=f"atc{v['id']}", type="primary"):
+                                avisar(V.ativar(v["id"], False))
+                                st.rerun()
         st.markdown("#### Novo vendedor")
         with st.form("novo_vend", clear_on_submit=True):
             c1, c2 = st.columns(2)

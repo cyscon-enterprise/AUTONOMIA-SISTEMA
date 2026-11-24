@@ -1183,6 +1183,50 @@ def registrar(vend: dict, cnpj: str, tipo: str, texto: str) -> dict:
     return {"ok": True, "mensagem": "Registrado."}
 
 
+def qtd_carteira(vendedor_id: int) -> int:
+    with dados.engine().connect() as conn:
+        return conn.execute(sa.text("SELECT count(*) FROM crm_carteira WHERE vendedor_id = :i"), {"i": vendedor_id}).scalar()
+
+
+def pool_resumo() -> dict:
+    """O pool de contas = empresas da mestra sem vendedor. Devolve o total e os New Names (funil) ainda sem dono."""
+    with dados.engine().connect() as conn:
+        total = conn.execute(sa.text("SELECT count(*) FROM empresas e WHERE NOT EXISTS "
+                                     "(SELECT 1 FROM crm_carteira c WHERE c.cnpj = e.cnpj)")).scalar()
+        nn = _q(conn, f"SELECT l.id, l.cnpj, coalesce(l.nome_fantasia, l.razao_social) AS nome, l.cidade, l.estado "
+                      f"FROM {dados.FONTE} l WHERE l.cnpj IS NOT NULL AND NOT EXISTS "
+                      "(SELECT 1 FROM crm_carteira c WHERE c.cnpj = l.cnpj) ORDER BY l.id")
+        sem_cnpj = conn.execute(sa.text(f"SELECT count(*) FROM {dados.FONTE} WHERE cnpj IS NULL")).scalar()
+    return {"total": total, "new_names": nn, "new_names_sem_cnpj": sem_cnpj}
+
+
+def pool_buscar(texto: str, limite: int = 40) -> list[dict]:
+    """Empresas sem dono que combinam com o texto (nome, fantasia, CNPJ ou cidade)."""
+    t = (texto or "").strip()
+    if len(t) < 3:
+        return []
+    with dados.engine().connect() as conn:
+        return _q(conn, "SELECT e.cnpj, coalesce(e.nome_fantasia, e.nome) AS nome, e.cidade, e.estado, e.porte_da_empresa "
+                        "FROM empresas e WHERE NOT EXISTS (SELECT 1 FROM crm_carteira c WHERE c.cnpj = e.cnpj) "
+                        "AND (e.nome ILIKE :t OR e.nome_fantasia ILIKE :t OR e.cnpj LIKE :c OR e.cidade ILIKE :t) "
+                        "ORDER BY e.nome LIMIT :n",
+                  t=f"%{t}%", c=f"{''.join(ch for ch in t if ch.isdigit())}%" if any(ch.isdigit() for ch in t) else "#", n=limite)
+
+
+def atribuir_lote(admin: dict, cnpjs: list[str], para_id: int) -> dict:
+    """Admin: tira do pool e poe na carteira do vendedor. Quem ja tem dono nao e tocado (use Carteiras para transferir)."""
+    if not admin.get("admin"):
+        return {"erro": "Só o administrador atribui clientes."}
+    ok = pulou = 0
+    for cnpj in cnpjs:
+        if dono(cnpj):
+            pulou += 1
+            continue
+        ok += bool(transferir(admin, cnpj, para_id).get("ok"))
+    msg = f"{ok} cliente(s) atribuído(s)." + (f" {pulou} já tinham dono e não foram alterados." if pulou else "")
+    return {"ok": True, "mensagem": msg}
+
+
 def transferir(admin: dict, cnpj: str, para_id: int | None) -> dict:
     """Admin: passa o cliente para outro vendedor, ou devolve para a base (para_id None)."""
     if not admin.get("admin"):

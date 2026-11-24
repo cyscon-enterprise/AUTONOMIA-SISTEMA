@@ -697,6 +697,7 @@ if admin:
     paginas = [st.Page(telas_vendedor.pagina_visao_geral, title="Visão geral", icon="📊", url_path="visao-geral",
                        default=True)] + paginas + [
         st.Page(telas_vendedor.pagina_carteiras_todos, title="Carteiras (todos)", icon="👥", url_path="carteiras"),
+        st.Page(telas_vendedor.pagina_pool, title="Pool de contas", icon="🗃", url_path="pool"),
         st.Page(telas_vendedor.pagina_gestao, title="Gestão", icon="⚙", url_path="gestao")]
 # clicar na aba em que ja se esta nao recarrega a pagina no Streamlit: este ouvinte avisa o servidor
 _NAV_JS = """
