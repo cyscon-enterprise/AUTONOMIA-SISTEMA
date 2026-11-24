@@ -650,9 +650,24 @@ def aprovar(vendedor_id: int, aprovado: bool) -> dict:
 
 
 def ativar(vendedor_id: int, ativo: bool) -> dict:
+    """Desativar = o vendedor saiu: todos os clientes dele voltam para o pool de contas (sem dono)."""
+    n = 0
     with dados.engine().begin() as conn:
         conn.execute(sa.text("UPDATE crm_vendedores SET ativo = :a WHERE id = :i"), {"a": ativo, "i": vendedor_id})
-    return {"ok": True, "mensagem": "Vendedor reativado." if ativo else "Vendedor desativado (a carteira fica)."}
+        if not ativo:
+            nome = conn.execute(sa.text("SELECT nome FROM crm_vendedores WHERE id = :i"), {"i": vendedor_id}).scalar() or ""
+            cnpjs = [r[0] for r in conn.execute(sa.text("SELECT cnpj FROM crm_carteira WHERE vendedor_id = :i"),
+                                                {"i": vendedor_id})]
+            for cnpj in cnpjs:
+                _historico(conn, cnpj, "nota", "Sistema", f"Carteira: {nome} → pool de contas (vendedor desativado).")
+            conn.execute(sa.text("DELETE FROM crm_carteira WHERE vendedor_id = :i"), {"i": vendedor_id})
+            conn.execute(sa.text("DELETE FROM crm_servicos_cards WHERE vendedor_id = :i"), {"i": vendedor_id})
+            if cnpjs:
+                conn.execute(sa.text("UPDATE empresas SET responsavel = NULL WHERE cnpj = ANY(:l)"), {"l": cnpjs})
+            n = len(cnpjs)
+    if ativo:
+        return {"ok": True, "mensagem": "Vendedor reativado."}
+    return {"ok": True, "mensagem": f"Vendedor desativado: {n} cliente(s) voltaram para o pool de contas."}
 
 
 def empresas_parceiras() -> list[dict]:

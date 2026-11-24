@@ -173,11 +173,17 @@ def _vereditos(conn) -> dict[str, dict]:
         return {}
 
 
-def quadro() -> dict:
-    """Todos os cards, com o que a lista precisa. Os leads sao poucos (dezenas): tudo numa ida."""
+def quadro(vendedor_id: int | None = None) -> dict:
+    """Os cards, com o que a lista precisa. Os leads sao poucos (dezenas): tudo numa ida.
+    `vendedor_id`: so os leads que estao na carteira dele (New Names segue a mesma regra dos outros: um dono por
+    empresa, ou nenhum = pool de contas). None = todos (administrador)."""
     with engine().connect() as conn:
         fases = etapas(conn)
-        leads = _q(conn, f"SELECT * FROM {FONTE} ORDER BY id")
+        if vendedor_id is None:
+            leads = _q(conn, f"SELECT * FROM {FONTE} ORDER BY id")
+        else:
+            leads = _q(conn, f"SELECT * FROM {FONTE} WHERE cnpj IN (SELECT cnpj FROM crm_carteira WHERE vendedor_id = :v) "
+                             "ORDER BY id", v=vendedor_id)
         estados = {r["lead_id"]: r for r in _q(conn, "SELECT * FROM crm_mv_cards")}
         fora = _descartados(conn)
         verif = _vereditos(conn)

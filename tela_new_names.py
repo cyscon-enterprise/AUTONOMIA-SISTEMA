@@ -364,11 +364,13 @@ def pagina() -> None:
         {"erro": st.error, "aviso": st.warning}.get(tipo, st.success)(texto)
         ss.msg = None
 
+    q = dados.quadro(None if telas_vendedor.eu().get("admin") else telas_vendedor.eu()["id"])
+    if ss.lead and not telas_vendedor.eu().get("admin") and ss.lead not in {c["id"] for c in q["cards"]}:
+        ss.lead = None                     # lead que nao e da carteira dele nao abre
     if ss.lead:
         ver_ficha(ss.lead)
         return
 
-    q = dados.quadro()
     cards = q["cards"]
     alvo = (busca or "").strip().lower()
     if alvo:
