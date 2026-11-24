@@ -121,7 +121,8 @@ def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: 
                     ss.msg = ("ok", f"E-mail enviado para {para} e registrado no histórico.")
                     st.rerun()
         st.caption("Sai pelo e-mail da plataforma, com o seu nome; a resposta do cliente chega no seu e-mail. "
-                   "Fica registrado no histórico e vale como tentativa de contato.")
+                   "Fica registrado no histórico e vale como tentativa de contato. Use para o contato inicial e para "
+                   "enviar material: propostas, preços e condições são tratados pela equipe da Cyscon.")
         with st.popover("📩 O cliente respondeu", use_container_width=True):
             with st.form(f"resp{chave}", clear_on_submit=True):
                 resp = st.text_area("Cole aqui a resposta do cliente (e quem respondeu)")
@@ -412,7 +413,9 @@ def painel_ramal(s3: dict) -> None:
 
 def _comecar(s3: dict) -> None:
     """Barra lateral: a campanha (so as que tem telefones) e o botao de comecar."""
-    lista = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
+    todas = s3.get("campanhas") or [{"id": s3.get("campanha"), "nome": s3.get("campanha_nome") or "da 3C"}]
+    nn = tresc.campanha_new_names(todas)
+    lista = [c for c in todas if not tresc.eh_new_names(c)] or todas     # New Names tem botao proprio
     boas = _com_contatos()
     lista = [c for c in lista if int(c["id"]) in boas] or lista
     camps = {c["nome"]: c["id"] for c in lista}
@@ -424,6 +427,14 @@ def _comecar(s3: dict) -> None:
     if st.button("▶ Começar a receber ligações", type="primary", use_container_width=True,
                  help="O discador liga sozinho para a base e passa para você quem atender."):
         entrar_modo(s3, camps[nome], manual=False)
+    if st.button("🆕 Discar New Names (automático)", use_container_width=True,
+                 help="O discador liga sozinho só para os New Names (empresas que não são clientes ativos da "
+                      "TOTVS) e passa para você quem atender."):
+        if nn:
+            entrar_modo(s3, nn["id"], manual=False)
+        else:
+            st.warning("A campanha dos New Names ainda não existe na 3C. Crie a campanha, coloque seu ramal "
+                       "nela e informe o id em CAMPANHA_NEW_NAMES (ou dê a ela um nome com \"New Names\").")
     if st.button("☎ Prefiro ligar manualmente", use_container_width=True,
                  help="O discador fica parado; você liga pelos botões ☎ das fichas."):
         entrar_modo(s3, camps[nome], manual=True)
@@ -625,6 +636,8 @@ def baixa_na_tela(n: dict, onde: str = "tela", em_andamento: bool = False) -> No
                 "[class*='st-key-baixa_'] button p{font-size:14px;white-space:normal;overflow:visible;text-overflow:clip;"
                 "line-height:1.2}</style>", unsafe_allow_html=True)
     # as que poem o cliente na carteira primeiro (Retornar no topo); depois as demais, na ordem da 3C
+    if not (eu() or {}).get("admin"):                  # fechar venda e da Cyscon (contrato, Anexo I, item 2.1)
+        quals = [q for q in quals if q["nome"].strip().lower() != "ganho"]
     primeiro = ["retornar", "enviar e-mail", "agendar reuniao", "agendar reunião", "ganho"]
     quals = sorted(quals, key=lambda q: (primeiro.index(q["nome"].strip().lower())
                                          if q["nome"].strip().lower() in primeiro else len(primeiro)))
@@ -994,11 +1007,33 @@ def pagina_gestao() -> None:
                     doc = p["documento"] or ""
                     doc = (f"CPF {doc[:3]}.{doc[3:6]}.{doc[6:9]}-{doc[9:]}" if len(doc) == 11 else
                            f"CNPJ {doc[:2]}.{doc[2:5]}.{doc[5:8]}/{doc[8:12]}-{doc[12:]}" if len(doc) == 14 else doc)
-                    c1.markdown(f"**{p['nome']}** · {doc} · `{p['login']}` · {p['cidade'] or ''}  \n"
-                                f"{p['email'] or ''} · {tel}  \n"
-                                f"Cadastro em {br(p['criado_em'])} · aceitou os termos v{p['termos_versao']}")
+                    cn = p.get("emp_cnpj") or ""
+                    cn = f"{cn[:2]}.{cn[2:5]}.{cn[5:8]}/{cn[8:12]}-{cn[12:]}" if len(cn) == 14 else cn
+                    sn = lambda v: "—" if v is None else ("Sim" if v else "Não")
+                    ender = ", ".join(x for x in (p.get("emp_logradouro"), p.get("emp_numero"), p.get("emp_complemento"),
+                                                  p.get("emp_bairro")) if x)
+                    c1.markdown(
+                        f"**{p.get('emp_razao') or p['nome']}**"
+                        f"{' (' + p['emp_fantasia'] + ')' if p.get('emp_fantasia') else ''} · CNPJ {cn}  \n"
+                        f"{ender} · {p.get('emp_cidade') or ''}/{p.get('emp_uf') or ''} · CEP {p.get('emp_cep') or ''}  \n"
+                        f"{p.get('emp_email') or ''} · {p.get('emp_telefone') or ''}  \n"
+                        f"**Representante:** {p['nome']} · {doc} · {p['email'] or ''} · {tel} · login `{p['login']}`  \n"
+                        f"**Perfil:** vendas {sn(p.get('exp_vendas'))}"
+                        f"{' (' + str(p['exp_vendas_anos']) + ' anos)' if p.get('exp_vendas_anos') else ''}"
+                        f" · TOTVS {sn(p.get('exp_totvs'))} · outro ERP {sn(p.get('exp_outro_erp'))}"
+                        f"{' (' + p['exp_outro_erp_qual'] + ')' if p.get('exp_outro_erp_qual') else ''}  \n"
+                        f"**Perfil de atuação:** {'Perfil ' + str(p['perfil_atuacao']) if p.get('perfil_atuacao') else '—'}  \n"
+                        f"**Disponibilidade (informativa):** até {p.get('disp_vezes') or '?'}x por semana · "
+                        f"{(p.get('disp_periodos') or '').replace(',', ', ')}  \n"
+                        f"Cadastro em {br(p['criado_em'])} · aceitou os termos v{p['termos_versao']}")
                     if c2.button("✅ Aprovar", key=f"apr{p['id']}", type="primary"):
-                        avisar(V.aprovar(p["id"], True))
+                        r = V.aprovar(p["id"], True)
+                        if r.get("ok") and p.get("email"):
+                            import datetime as _dt
+                            import email_envio
+                            email_envio.enviar_aprovacao(
+                                p["email"], p["nome"], (dados.agora() + _dt.timedelta(days=V.PRAZO_CONTRATO_DIAS)).strftime("%d/%m/%Y"))
+                        avisar(r)
                         st.rerun()
                     if c3.button("Recusar", key=f"rec{p['id']}"):
                         avisar(V.aprovar(p["id"], False))
@@ -1016,6 +1051,44 @@ def pagina_gestao() -> None:
                 c1.markdown(f"**{v['nome']}** · `{v['login']}`{' · admin' if v['admin'] else ''}"
                             f"{'' if v['ativo'] else ' · _desativado_'}  \n"
                             f"{v['clientes']} cliente(s) · último acesso {br(v['ultimo_acesso']) or 'nunca'}")
+                if v.get("emp_cnpj"):
+                    with c2.popover("Pagamento ✓" if v.get("pg_atualizado_em") else "Pagamento pendente"):
+                        pg = V.pagamento(v["id"])
+                        if pg.get("pg_atualizado_em"):
+                            st.markdown(
+                                f"**Titular:** {pg['emp_razao']}  \n**CNPJ:** {pg['emp_cnpj']}  \n"
+                                + (f"**Banco:** {pg['pg_banco']} · {pg['pg_tipo_conta']}  \n"
+                                   f"**Agência:** {pg['pg_agencia']} · **Conta:** {pg['pg_conta']}  \n"
+                                   if pg.get("pg_conta") else "")
+                                + (f"**PIX ({pg['pg_pix_tipo']}):** {pg['pg_pix_chave']}  \n" if pg.get("pg_pix_chave") else "")
+                                + f"Informado em {br(pg['pg_atualizado_em'])}")
+                            if st.button("Liberar nova edição", key=f"lib{v['id']}"):
+                                avisar(V.liberar_pagamento(v["id"]))
+                                st.rerun()
+                        else:
+                            st.write("Ainda não informou. Ele vê a tela de pagamento no próximo acesso.")
+                if v.get("contrato_status"):
+                    rot = {"aguardando": "Contrato pendente", "enviado": "Contrato: conferir", "conferido": "Contrato ✓"}
+                    with c2.popover(rot.get(v["contrato_status"], "Contrato")):
+                        st.write(f"Situação: **{v['contrato_status']}**"
+                                 + (f" · prazo até {br(v['contrato_prazo'])}" if v.get("contrato_prazo") else ""))
+                        arq = V.contrato_assinado_arquivo(v["id"])
+                        if arq:
+                            st.download_button("⬇ Contrato assinado", arq[1], file_name=arq[0], mime="application/pdf",
+                                               key=f"dla{v['id']}")
+                            st.caption("Confira a assinatura em validar.iti.gov.br e veja o código do documento.")
+                        if v["contrato_status"] == "enviado":
+                            if st.button("✅ Assinatura conferida", key=f"cf{v['id']}", type="primary"):
+                                avisar(V.conferir_contrato(v["id"], eu()["nome"], True))
+                                st.rerun()
+                            obs = st.text_input("Motivo, se devolver", key=f"ob{v['id']}")
+                            if st.button("Devolver (novo prazo de 7 dias)", key=f"dv{v['id']}"):
+                                avisar(V.conferir_contrato(v["id"], eu()["nome"], False, obs))
+                                st.rerun()
+                        elif v["contrato_status"] == "aguardando":
+                            if st.button("Prorrogar mais 7 dias", key=f"pr{v['id']}"):
+                                avisar(V.prorrogar_contrato(v["id"]))
+                                st.rerun()
                 with c2.popover("Trocar senha"):
                     with st.form(f"senha{v['id']}", clear_on_submit=True):
                         nova = st.text_input("Nova senha (mín. 8)", type="password")

@@ -48,6 +48,25 @@ def tem_senha_ramal() -> bool:
     return bool(_RAMAL["senha"])
 
 
+_NEW_NAMES = {"id": ""}
+
+
+def configurar_campanha_new_names(campanha_id: str) -> None:
+    """Id da campanha da 3C so com New Names (Secret CAMPANHA_NEW_NAMES). Vazio = acha pelo nome."""
+    _NEW_NAMES["id"] = str(campanha_id or "").strip()
+
+
+def eh_new_names(c: dict) -> bool:
+    if _NEW_NAMES["id"]:
+        return str(c.get("id")) == _NEW_NAMES["id"]
+    return "new name" in str(c.get("nome") or "").lower().replace("_", " ").replace("-", " ")
+
+
+def campanha_new_names(lista: list[dict]) -> dict | None:
+    """A campanha dos New Names entre as do ramal (None enquanto ainda nao existe na 3C)."""
+    return next((c for c in lista if eh_new_names(c)), None)
+
+
 def autenticar_padrao() -> dict:
     return autenticar(_RAMAL["ramal"], _RAMAL["senha"])
 

@@ -24,6 +24,7 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
+import contrato
 import dados
 import email_envio
 import ia_ligacoes
@@ -57,6 +58,7 @@ def _segredo(nome: str, *alternativas: str) -> str:
 dados.configurar(_segredo("DATABASE_URL", "CYSCON_DATABASE_URL"))
 tresc.configurar(_segredo("TRESC_TOKEN", "CYSCON_3C_TOKEN"))
 tresc.configurar_ramal(_segredo("TRESC_RAMAL") or "1003", _segredo("TRESC_RAMAL_SENHA"))
+tresc.configurar_campanha_new_names(_segredo("CAMPANHA_NEW_NAMES"))
 ia_ligacoes.configurar(_segredo("ANTHROPIC_API_KEY"))
 email_envio.configurar(_segredo("SMTP_USUARIO"), _segredo("SMTP_SENHA"), _segredo("SMTP_HOST"), _segredo("SMTP_PORTA"))
 
@@ -197,29 +199,12 @@ def tela_login() -> None:
         st.markdown("<p style='text-align:center;color:#5b6b85;margin:14px 0 4px'>Ainda não tem acesso?</p>",
                     unsafe_allow_html=True)
         # cadastro aberto desligado por enquanto (pedido da dona): o botao fica a vista, cinza e sem acao
-        CADASTRO_ABERTO = False
-        if st.button("Quero me cadastrar como vendedor autônomo", use_container_width=True,
+        CADASTRO_ABERTO = os.environ.get("CADASTRO_ABERTO") == "1"   # liga so quando a dona liberar
+        if st.button("Quero me cadastrar como vendedor parceiro (PJ)", use_container_width=True,
                      disabled=not CADASTRO_ABERTO, help=None if CADASTRO_ABERTO else "Cadastro em breve"):
             ss.tela_cadastro = True
             st.rerun()
     st.stop()
-
-
-TERMOS = f"""**Termos do Vendedor Parceiro · versão {V.TERMOS_VERSAO}**
-
-- Você trabalha como **autônomo, sem vínculo empregatício**: escolhe se, quando e quanto tempo usa a plataforma. \
-Não há horário, metas nem exclusividade.
-- Você recebe **10% de comissão** sobre o valor líquido efetivamente pago pelo cliente em cada venda de lead da sua \
-carteira. Não há salário, ajuda de custo nem outros pagamentos.
-- A empresa entra na sua carteira quando a ligação feita por você termina em Retornar, Enviar e-mail, Agendar reunião \
-ou Ganho, ou quando a conversa dura 60 segundos ou mais.
-- Se você ficar **90 dias sem ligar** (nem tentativa) para um lead da sua carteira, perde o direito sobre ele.
-- **Todas as ligações são gravadas** e podem ser transcritas e resumidas por IA, para comprovar a carteira e \
-qualificar os leads.
-- Os dados dos leads são da plataforma (LGPD): é proibido copiar, exportar ou usar esses dados fora dela.
-- Você usa seu próprio computador, internet e fone, e cuida dos seus tributos.
-- O acesso é pessoal: não compartilhe seu login.
-"""
 
 
 CODIGO_VALIDADE_MIN = 15
@@ -227,15 +212,34 @@ CODIGO_TENTATIVAS = 5
 CODIGO_REENVIO_S = 60
 
 
+def _anexos(d: dict) -> list:
+    """PDFs que vao no e-mail do codigo: o contrato preenchido e as politicas aceitas (gerados uma vez por cadastro)."""
+    if "_anexos" not in d:
+        d["_anexos"] = [
+            ("Contrato_AutonomIA_Vendas.pdf", contrato.pdf([d["contrato_texto"]], "Contrato de prestação de serviços"),
+             "application/pdf"),
+            (f"Politicas_AutonomIA_Vendas_v{V.TERMOS_VERSAO}.pdf",
+             contrato.pdf([V.texto_doc(k) for k, _ in V.DOCS[1:]], "Políticas AutonomIA Vendas"), "application/pdf")]
+    return d["_anexos"]
+
+
 def _mandar_codigo(d: dict) -> dict:
-    """Gera um codigo de 6 digitos, manda para o e-mail do cadastro e guarda so o hash nesta sessao."""
+    """Gera um codigo de 6 digitos, manda para o e-mail do cadastro (com o contrato e as politicas aceitas em PDF)
+    e guarda so o hash nesta sessao."""
     pendente = ss.get("cadastro_codigo")
     if pendente and time.time() - pendente["enviado"] < CODIGO_REENVIO_S:
         return {"erro": f"Aguarde {CODIGO_REENVIO_S} segundos para pedir outro código."}
+    if time.time() - ss.get("_cad_ultimo_envio", 0) < 10:
+        return {"erro": "Aguarde alguns segundos."}
+    envios = [t for t in ss.get("_cad_envios", []) if time.time() - t < 3600]
+    if len(envios) >= 5:
+        return {"erro": "Muitos envios de código nesta hora. Tente mais tarde."}
     codigo = f"{secrets.randbelow(10**6):06d}"
-    r = email_envio.enviar_codigo(d["email"], d["nome"], codigo)
+    r = email_envio.enviar_codigo_cadastro(d["email"], d["nome"], codigo, _anexos(d), [t for _, t in V.DOCS],
+                                           V.TERMOS_VERSAO)
     if r.get("erro"):
         return r
+    ss._cad_envios, ss._cad_ultimo_envio = envios + [time.time()], time.time()
     ss.cadastro_codigo = {"dados": d, "hash": hashlib.sha256(codigo.encode()).hexdigest(),
                           "enviado": time.time(), "tentativas": 0}
     return {"ok": True}
@@ -264,6 +268,9 @@ def confirmar_email() -> None:
                 st.error(r["erro"])
             else:
                 ss.pop("cadastro_codigo", None)
+                ss.pop("cad_pre", None)
+                for k in [k for k in ss.keys() if k.startswith("c_")]:
+                    del ss[k]
                 ss.cadastro_ok = d["nome"].split()[0]
                 st.rerun()
     c1, c2 = st.columns(2)
@@ -273,20 +280,107 @@ def confirmar_email() -> None:
             st.error(r["erro"])
         else:
             st.success("Enviamos um código novo.")
-    if c2.button("Corrigir meus dados", use_container_width=True):
+    if c2.button("Voltar aos documentos", use_container_width=True):
         ss.pop("cadastro_codigo", None)
         st.rerun()
     st.stop()
 
 
+def _buscar_cnpj() -> None:
+    """Botao "Buscar dados": preenche razao social, endereco etc. pelo CNPJ (Receita)."""
+    r = V.consulta_cnpj(ss.get("c_emp_cnpj", ""))
+    if r.get("erro"):
+        ss.c_aviso = ("erro", r["erro"])
+    elif r.get("indisponivel"):
+        ss.c_aviso = ("info", "A consulta da Receita está fora do ar agora. Preencha os dados à mão.")
+    else:
+        for k, v in (("emp_razao", "razao"), ("emp_fantasia", "fantasia"), ("emp_cep", "cep"),
+                     ("emp_logradouro", "logradouro"), ("emp_numero", "numero"), ("emp_complemento", "complemento"),
+                     ("emp_bairro", "bairro"), ("emp_cidade", "cidade"), ("emp_uf", "uf"),
+                     ("emp_email", "email"), ("emp_telefone", "telefone")):
+            if r.get(v):
+                ss["c_" + k] = r[v]
+        if r["situacao"].lower().startswith("ativa"):
+            ss.c_aviso = ("ok", f"Dados carregados: {r['razao']}. Confira e complete o que faltar.")
+        else:
+            ss.c_aviso = ("erro", f"Esse CNPJ consta como {r['situacao'] or 'não ativo'} na Receita Federal.")
+
+
+def _buscar_cep() -> None:
+    r = V.consulta_cep(ss.get("c_emp_cep", ""))
+    if r.get("ok"):
+        for k in ("logradouro", "bairro", "cidade", "uf"):
+            if r.get(k):
+                ss["c_emp_" + k] = r[k]
+    elif r.get("erro"):
+        ss.c_aviso = ("erro", r["erro"])
+
+
+def _ler_formulario() -> dict:
+    sim = lambda k: None if ss.get(k) is None else ss[k] == "Sim"
+    return {"emp_cnpj": ss.get("c_emp_cnpj"), "emp_razao": ss.get("c_emp_razao"),
+            "emp_fantasia": ss.get("c_emp_fantasia"), "emp_cep": ss.get("c_emp_cep"),
+            "emp_logradouro": ss.get("c_emp_logradouro"), "emp_numero": ss.get("c_emp_numero"),
+            "emp_complemento": ss.get("c_emp_complemento"), "emp_bairro": ss.get("c_emp_bairro"),
+            "emp_cidade": ss.get("c_emp_cidade"), "emp_uf": ss.get("c_emp_uf"),
+            "emp_email": ss.get("c_emp_email"), "emp_telefone": ss.get("c_emp_telefone"),
+            "nome": ss.get("c_nome"), "cpf": ss.get("c_cpf"), "email": ss.get("c_email"),
+            "celular": ss.get("c_celular"),
+            "exp_vendas": sim("c_exp_vendas"),
+            "exp_vendas_anos": int(ss["c_exp_vendas_anos"]) if ss.get("c_exp_vendas") == "Sim" else None,
+            "exp_totvs": sim("c_exp_totvs"), "exp_outro_erp": sim("c_exp_outro_erp"),
+            "exp_outro_erp_qual": ss.get("c_exp_outro_erp_qual"),
+            "perfil": {"Perfil 1": 1, "Perfil 2": 2}.get((ss.get("c_perfil") or "")[:8]),
+            "disp_vezes": ss.get("c_disp_vezes"), "disp_periodos": ss.get("c_disp_periodos") or [],
+            "login": ss.get("c_login"), "senha": ss.get("c_senha")}
+
+
+def _md(t: str) -> str:
+    return re.sub(r"(?<!\n)\n(?!\n)", "  \n", t)
+
+
+def etapa_documentos() -> None:
+    """Passo 2: o contrato ja preenchido com os dados do passo 1 e as politicas, cada uma com o seu aceite."""
+    pre = ss.cad_pre
+    st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'><b>Passo 2 de 3 · leia e aceite</b></p>",
+                unsafe_allow_html=True)
+    st.info("Este é o seu contrato, já preenchido com os dados do passo 1. Leia cada aba e marque o aceite de cada "
+            f"documento (versão {V.TERMOS_VERSAO}). Depois enviamos um código por e-mail, com uma cópia de tudo em PDF.")
+    abas = st.tabs([t for _, t in V.DOCS])
+    for aba, (chave, titulo) in zip(abas, V.DOCS):
+        with aba:
+            with st.container(height=420, border=True):
+                st.markdown(_md(pre["texto"]) if chave == "01_contrato" else V.texto_doc(chave))
+            st.checkbox(f"Li e aceito: {titulo}", key=f"c_aceito_{chave}")
+    faltam = [t for ch, t in V.DOCS if not ss.get(f"c_aceito_{ch}")]
+    if faltam:
+        st.caption("Falta aceitar: " + ", ".join(faltam) + ".")
+    c1, c2 = st.columns(2)
+    if c1.button("← Voltar e corrigir meus dados", use_container_width=True):
+        ss.update(pre["raw"])                      # os campos do passo 1 voltam preenchidos
+        ss.pop("cad_pre", None)
+        st.rerun()
+    if c2.button("Aceitar e receber o código", type="primary", use_container_width=True, disabled=bool(faltam)):
+        d = {**pre["d"], "form": pre["form"], "contrato_texto": pre["texto"], "contrato_hash": pre["hash"],
+             "aceites": "; ".join(f"{t} (v{V.TERMOS_VERSAO})" for _, t in V.DOCS)}
+        with st.spinner("Gerando seus documentos e enviando o e-mail…"):
+            r = _mandar_codigo(d)
+        if r.get("erro"):
+            st.error(r["erro"])
+        else:
+            st.rerun()
+    st.stop()
+
+
 def tela_cadastro() -> None:
-    """Botao "Quero me cadastrar": a pessoa cria o login e aceita os termos; entra so depois da aprovacao."""
-    _, meio, _ = st.columns([1, 1.3, 1])
+    """Botao "Quero me cadastrar" (so PJ): empresa, representante, perfil comercial e disponibilidade.
+    A pessoa cria o login e aceita os termos; so entra depois que o gestor aprovar."""
+    _, meio, _ = st.columns([1, 1.5, 1])
     with meio:
         st.write("")
         st.image(LOGO, use_container_width=True)
         if ss.get("cadastro_ok"):
-            st.success(f"Cadastro enviado, {ss.cadastro_ok}! Um administrador vai analisar e liberar seu acesso. "
+            st.success(f"Cadastro enviado, {ss.cadastro_ok}! O gestor vai analisar e liberar seu acesso. "
                        "Depois é só entrar com o login e a senha que você criou.")
             if st.button("Voltar para o login", type="primary", use_container_width=True):
                 ss.pop("cadastro_ok", None)
@@ -295,39 +389,89 @@ def tela_cadastro() -> None:
             st.stop()
         if ss.get("cadastro_codigo"):
             confirmar_email()
-        st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Cadastro de vendedor autônomo · "
-                    "comissão de 10% por venda</p>", unsafe_allow_html=True)
-        with st.form("cadastro"):
-            nome = st.text_input("Nome completo ou razão social")
-            documento = st.text_input("CPF ou CNPJ", placeholder="só os números ou com pontuação")
-            c1, c2 = st.columns(2)
-            email = c1.text_input("E-mail")
-            celular = c2.text_input("Celular / WhatsApp (com DDD)")
-            cidade = st.text_input("Cidade / UF")
-            c1, c2 = st.columns(2)
-            login = c1.text_input("Login (ex.: maria.souza)")
-            senha = c2.text_input("Senha (mín. 8)", type="password")
-            senha2 = c2.text_input("Repita a senha", type="password")
-            st.markdown("**Nossas políticas: leia antes de aceitar**")
-            with st.container(height=230, border=True):
-                st.markdown(TERMOS)
-            aceito = st.checkbox(f"Li e aceito os Termos do Vendedor Parceiro, versão {V.TERMOS_VERSAO}")
-            ok = st.form_submit_button("Continuar", type="primary", use_container_width=True)
-        if ok:
-            if not aceito:
-                st.error("Para se cadastrar, marque que leu e aceita os termos.")
-            elif senha != senha2:
+        if ss.get("cad_pre"):
+            etapa_documentos()
+        st.markdown("<p style='text-align:center;color:#5b6b85;margin-top:-6px'>Cadastro de vendedor parceiro "
+                    "(pessoa jurídica) · comissão de 10% por venda<br><b>Passo 1 de 3 · seus dados</b></p>",
+                    unsafe_allow_html=True)
+
+        st.markdown("#### A. Dados da empresa")
+        c1, c2 = st.columns([3, 1.4])
+        c1.text_input("CNPJ", key="c_emp_cnpj", placeholder="00.000.000/0000-00")
+        c2.write("")
+        c2.write("")
+        c2.button("Buscar dados", on_click=_buscar_cnpj, use_container_width=True,
+                  help="Preenche razão social e endereço pela Receita Federal")
+        if ss.get("c_aviso"):
+            tipo, msg = ss.c_aviso
+            {"erro": st.error, "ok": st.success}.get(tipo, st.info)(msg)
+        st.text_input("Razão social", key="c_emp_razao")
+        st.text_input("Nome fantasia (se houver)", key="c_emp_fantasia")
+        c1, c2 = st.columns([1.3, 1])
+        c1.text_input("CEP", key="c_emp_cep", on_change=_buscar_cep, placeholder="00000-000")
+        c2.text_input("Número", key="c_emp_numero")
+        st.text_input("Logradouro", key="c_emp_logradouro")
+        c1, c2 = st.columns(2)
+        c1.text_input("Complemento", key="c_emp_complemento")
+        c2.text_input("Bairro", key="c_emp_bairro")
+        c1, c2 = st.columns([3, 1])
+        c1.text_input("Cidade", key="c_emp_cidade")
+        c2.text_input("UF", key="c_emp_uf", max_chars=2)
+        c1, c2 = st.columns(2)
+        c1.text_input("E-mail da empresa", key="c_emp_email")
+        c2.text_input("Telefone da empresa (com DDD)", key="c_emp_telefone")
+
+        st.markdown("#### B. Representante da empresa")
+        st.text_input("Nome completo", key="c_nome")
+        c1, c2 = st.columns(2)
+        c1.text_input("CPF", key="c_cpf", placeholder="000.000.000-00")
+        c2.text_input("Celular / WhatsApp (com DDD)", key="c_celular")
+        st.text_input("E-mail do representante (é o que recebe o código de confirmação)", key="c_email")
+
+        st.markdown("#### C. Perfil comercial")
+        c1, c2 = st.columns([2, 1])
+        c1.radio("Tem experiência com vendas?", ["Sim", "Não"], index=None, horizontal=True, key="c_exp_vendas")
+        if ss.get("c_exp_vendas") == "Sim":
+            c2.number_input("Quantos anos?", min_value=1, max_value=60, value=1, step=1, key="c_exp_vendas_anos")
+        st.radio("Tem experiência com ERP/TOTVS?", ["Sim", "Não"], index=None, horizontal=True, key="c_exp_totvs")
+        c1, c2 = st.columns([2, 1.4])
+        c1.radio("Tem experiência com outro ERP?", ["Sim", "Não"], index=None, horizontal=True, key="c_exp_outro_erp")
+        if ss.get("c_exp_outro_erp") == "Sim":
+            c2.text_input("Qual?", key="c_exp_outro_erp_qual")
+
+        st.markdown("#### D. Perfil de atuação (Anexo I do contrato)")
+        st.radio("Escolha o perfil", [
+            "Perfil 1 – Prospecção e agendamento: identificar empresas, fazer o contato inicial, qualificar e agendar "
+            "reuniões para a Cyscon.",
+            "Perfil 2 – Prospecção, qualificação e acompanhamento de contatos: tudo do Perfil 1, mais atualizar o "
+            "histórico, organizar retornos e verificar a continuidade do interesse."], index=None, key="c_perfil")
+        st.caption("Nenhum perfil inclui propostas, negociação de preços ou fechamento de vendas: isso é feito pela Cyscon.")
+
+        st.markdown("#### E. Disponibilidade (informativa)")
+        st.caption("Não é obrigação nem jornada. Serve só para organizar a fila de turnos do discador, porque a linha de "
+                   "discagem é compartilhada. Você escolhe se e quando usar a plataforma.")
+        st.radio("Quantas vezes por semana, no máximo?", [1, 2, 3, 4, 5], index=None, horizontal=True,
+                 key="c_disp_vezes", format_func=lambda n: f"Até {n}")
+        st.multiselect("Períodos disponíveis", V.PERIODOS, key="c_disp_periodos")
+
+        st.markdown("#### Acesso")
+        c1, c2 = st.columns(2)
+        c1.text_input("Login (ex.: maria.souza)", key="c_login")
+        c2.text_input("Senha (mín. 8)", type="password", key="c_senha")
+        c2.text_input("Repita a senha", type="password", key="c_senha2")
+        if st.button("Prosseguir", type="primary", use_container_width=True):
+            if ss.get("c_senha") != ss.get("c_senha2"):
                 st.error("As senhas não conferem.")
             else:
-                d = V.validar_cadastro(nome, documento, email, celular, cidade, login, senha)
+                form = _ler_formulario()
+                d = V.validar_cadastro(form)
                 if d.get("erro"):
                     st.error(d["erro"])
                 else:
-                    r = _mandar_codigo(d)
-                    if r.get("erro"):
-                        st.error(r["erro"])
-                    else:
-                        st.rerun()
+                    c = contrato.montar(d)
+                    ss.cad_pre = {"form": form, "d": d, "texto": c["texto"], "hash": c["hash"],
+                                  "raw": {k: ss[k] for k in list(ss.keys()) if k.startswith("c_")}}
+                    st.rerun()
         if st.button("Já tenho login", use_container_width=True):
             ss.tela_cadastro = False
             st.rerun()
@@ -365,6 +509,100 @@ if ss.get("_salvo") != (ss.get("empresa"), ss.get("sessao3c")):    # empresa ou 
     ss._salvo = (ss.get("empresa"), ss.get("sessao3c"))
 
 ss.quem = ss.usuario["nome"]                       # assina tudo que se registra no CRM
+
+
+def tela_pagamento() -> None:
+    """Primeiro acesso depois da aprovacao: onde a empresa recebe a comissao (entra no contrato).
+    A conta e a chave PIX tem de ser da PJ (mesmo CNPJ do cadastro)."""
+    u = ss.usuario
+    v = V.por_id(u["id"]) or u
+    _, meio, _ = st.columns([1, 1.5, 1])
+    with meio:
+        st.write("")
+        st.image(LOGO, use_container_width=True)
+        st.markdown(f"### Cadastro aprovado, {u['nome'].split()[0]}!")
+        st.info("Falta só um passo: informe onde a sua empresa vai receber a comissão. Esses dados entram no "
+                "contrato e só o gestor tem acesso a eles.")
+        st.markdown(f"**Titular:** {v.get('emp_razao') or '—'}  \n**CNPJ:** {v['emp_cnpj']}  \n"
+                    "<span style='color:#5b6b85'>A conta e a chave PIX precisam estar no CNPJ da empresa.</span>",
+                    unsafe_allow_html=True)
+        st.markdown("#### Conta bancária")
+        c1, c2 = st.columns(2)
+        banco = c1.selectbox("Banco", [""] + V.BANCOS, key="p_banco")
+        tipo = c2.selectbox("Tipo de conta", [""] + V.TIPOS_CONTA, key="p_tipo")
+        c1, c2 = st.columns(2)
+        agencia = c1.text_input("Agência (sem dígito)", key="p_agencia")
+        conta = c2.text_input("Conta com dígito", key="p_conta", placeholder="12345-6")
+        st.markdown("#### Chave PIX")
+        c1, c2 = st.columns([1, 2])
+        pix_tipo = c1.selectbox("Tipo da chave", [""] + V.TIPOS_PIX, key="p_pix_tipo")
+        pix = c2.text_input("Chave PIX", key="p_pix")
+        st.caption("Preencha a conta, o PIX ou os dois.")
+        if st.button("Salvar e continuar", type="primary", use_container_width=True):
+            r = V.salvar_pagamento(u, {"banco": banco, "tipo_conta": tipo, "agencia": agencia, "conta": conta,
+                                       "pix_tipo": pix_tipo, "pix_chave": pix})
+            if r.get("erro"):
+                st.error(r["erro"])
+            else:
+                ss.usuario["pg_atualizado_em"] = dados.agora()
+                st.rerun()
+        if st.button("Sair", use_container_width=True):
+            sessao_aba.encerrar()
+            for k in list(ss.keys()):
+                del ss[k]
+            ss._sair = True
+            st.rerun()
+    st.stop()
+
+
+def _pdf_contrato(vid: int) -> bytes:
+    return contrato.pdf([V.contrato_texto(vid)], "Contrato de prestação de serviços")
+
+
+def painel_contrato(c: dict, chave: str) -> None:
+    """Baixar o contrato, assinar no gov.br e enviar o PDF assinado."""
+    st.markdown("**1.** Baixe o contrato, **2.** assine em [assinador.iti.br](https://assinador.iti.br) com a sua conta "
+                "gov.br e **3.** envie o PDF assinado aqui.")
+    st.download_button("⬇ Baixar o contrato (PDF)", _pdf_contrato(c["vendedor_id"]),
+                       file_name="Contrato_AutonomIA_Vendas.pdf", mime="application/pdf", key=f"dl_{chave}",
+                       use_container_width=True)
+    up = st.file_uploader("Contrato assinado (PDF)", type=["pdf"], key=f"up_{chave}")
+    if up is not None and st.button("Enviar contrato assinado", type="primary", key=f"env_{chave}",
+                                    use_container_width=True):
+        r = V.enviar_contrato_assinado(c["vendedor_id"], up.name, up.getvalue())
+        if r.get("erro"):
+            st.error(r["erro"])
+        else:
+            ss.msg = ("ok", r["mensagem"])
+            st.rerun()
+
+
+def tela_contrato_bloqueado(c: dict) -> None:
+    _, meio, _ = st.columns([1, 1.5, 1])
+    with meio:
+        st.write("")
+        st.image(LOGO, use_container_width=True)
+        st.error("Seu acesso está bloqueado: o prazo de 7 dias para enviar o contrato assinado terminou.")
+        if c.get("obs"):
+            st.warning(f"Observação do gestor: {c['obs']}")
+        painel_contrato(c, "pg")
+        st.caption("Assim que você enviar o arquivo, o acesso é liberado.")
+        if st.button("Sair", use_container_width=True):
+            sessao_aba.encerrar()
+            for k in list(ss.keys()):
+                del ss[k]
+            ss._sair = True
+            st.rerun()
+    st.stop()
+
+
+_ctr = None if ss.usuario.get("admin") else V.contrato_do(ss.usuario["id"])
+if _ctr and _ctr["situacao"] == "bloqueado":
+    tela_contrato_bloqueado(_ctr)
+
+
+if V.precisa_pagamento(ss.usuario):
+    tela_pagamento()
 
 
 def escolher_empresa() -> None:
@@ -411,6 +649,15 @@ if not ss.get("empresa"):
         escolher_empresa()
 
 with st.sidebar:
+    if _ctr and _ctr["situacao"] == "prazo":
+        st.warning(f"📄 Contrato pendente: assine pelo gov.br e envie em até {int(_ctr['dias'])} dia(s) "
+                   "para não bloquear o acesso.")
+        if _ctr.get("obs"):
+            st.caption(f"Observação do gestor: {_ctr['obs']}")
+        with st.expander("Assinar e enviar o contrato"):
+            painel_contrato(_ctr, "sb")
+    elif _ctr and _ctr["status"] == "enviado":
+        st.caption("📄 Contrato enviado, aguardando conferência do gestor.")
     # tudo da 3C fica aqui: o telefone web (WebRTC) fora das paginas nao cai ao trocar de pagina
     if ss.get("sessao3c"):
         st.markdown(f"**📞 Telefone · ramal {ss.sessao3c['ramal']}**")

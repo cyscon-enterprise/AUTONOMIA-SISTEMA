@@ -130,9 +130,74 @@ DDL = [
     "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS termos_ip VARCHAR(45)",
     "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS documento VARCHAR(14)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_vendedores_documento ON crm_vendedores (documento)",
+    # cadastro so de PJ (v2): empresa + representante + perfil comercial + disponibilidade.
+    # `nome`, `documento` (CPF), `email` e `celular` passam a ser os do REPRESENTANTE.
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_razao VARCHAR(150)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_fantasia VARCHAR(150)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_cnpj VARCHAR(14)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_cep VARCHAR(8)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_logradouro VARCHAR(150)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_numero VARCHAR(20)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_complemento VARCHAR(100)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_bairro VARCHAR(80)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_cidade VARCHAR(80)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_uf VARCHAR(2)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_email VARCHAR(120)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS emp_telefone VARCHAR(11)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS exp_vendas BOOLEAN",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS exp_vendas_anos SMALLINT",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS exp_totvs BOOLEAN",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS exp_outro_erp BOOLEAN",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS exp_outro_erp_qual VARCHAR(80)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS disp_vezes SMALLINT",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS disp_periodos VARCHAR(60)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_vendedores_emp_cnpj ON crm_vendedores (emp_cnpj)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS perfil_atuacao SMALLINT",
+    # contrato personalizado: texto aceito + hash; depois da aprovacao, 7 dias para enviar a versao assinada (gov.br)
+    """CREATE TABLE IF NOT EXISTS crm_contratos (
+        id SERIAL PRIMARY KEY,
+        vendedor_id INTEGER NOT NULL UNIQUE REFERENCES crm_vendedores(id) ON DELETE CASCADE,
+        versao VARCHAR(20) NOT NULL,
+        texto TEXT NOT NULL,
+        hash CHAR(64) NOT NULL,
+        aceites TEXT NOT NULL,
+        aceito_em TIMESTAMP NOT NULL,
+        aceito_ip VARCHAR(45),
+        status VARCHAR(12) NOT NULL DEFAULT 'aguardando',
+        prazo_ate TIMESTAMP,
+        assinado_pdf BYTEA,
+        assinado_nome VARCHAR(120),
+        enviado_em TIMESTAMP,
+        conferido_em TIMESTAMP,
+        conferido_por VARCHAR(60),
+        obs TEXT)""",
+    # dados de pagamento da PJ (preenchidos DEPOIS da aprovacao; entram no contrato)
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_banco VARCHAR(60)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_agencia VARCHAR(10)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_conta VARCHAR(20)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_tipo_conta VARCHAR(20)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_pix_tipo VARCHAR(12)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_pix_chave VARCHAR(100)",
+    "ALTER TABLE crm_vendedores ADD COLUMN IF NOT EXISTS pg_atualizado_em TIMESTAMP",
 ]
 
-TERMOS_VERSAO = "1.0"
+PERIODOS = ["08h–10h", "10h–12h", "14h–16h30"]
+
+TERMOS_VERSAO = "2.0"
+
+# documentos que o vendedor le e aceita no cadastro (um aceite por documento); o texto de cada um vive em termos/
+DOCS = [("01_contrato", "Contrato de prestação de serviços"), ("02_comissionamento", "Política de Comissionamento"),
+        ("03_carteira", "Política de Carteira e Oportunidades"), ("04_privacidade", "Política de Privacidade"),
+        ("05_seguranca", "Segurança e Confidencialidade"), ("06_gravacao", "Gravação das ligações"),
+        ("07_ia", "Utilização da IA")]
+
+
+def texto_doc(chave: str) -> str:
+    """Texto de um documento dos termos (Markdown). Quebra simples de linha vira quebra visivel."""
+    import pathlib
+    t = (pathlib.Path(__file__).parent / "termos" / f"{chave}.md").read_text(encoding="utf-8")
+    t = t.replace("@@PAGEBREAK", "\n---\n")
+    return re.sub(r"(?<!\n)\n(?!\n)", "  \n", t)
 
 
 def preparar() -> None:
@@ -166,7 +231,7 @@ def confere(senha: str, guardado: str) -> bool:
 
 
 def _login_ok(login: str) -> str:
-    return re.sub(r"[^a-z0-9._-]", "", (login or "").strip().lower())
+    return re.sub(r"[^a-z0-9._@-]", "", (login or "").strip().lower())      # aceita o e-mail como login
 
 
 def tem_vendedor() -> bool:
@@ -178,7 +243,8 @@ def entrar(login: str, senha: str) -> dict | None:
     """O vendedor (sem o hash) ou None. Mesmo tempo de resposta com login certo ou errado.
     Cadastro ainda nao aprovado, com a senha certa: {"pendente": True}."""
     with dados.engine().begin() as conn:
-        r = _q(conn, "SELECT * FROM crm_vendedores WHERE login = :l", l=_login_ok(login))
+        r = _q(conn, "SELECT * FROM crm_vendedores WHERE login = :l OR lower(email) = :l "
+                     "ORDER BY (login = :l) DESC LIMIT 1", l=_login_ok(login))     # entra pelo login ou pelo e-mail
         if not r:
             hash_senha(senha or "")               # gasta o mesmo tempo: nao entrega quais logins existem
             return None
@@ -245,61 +311,325 @@ def documento_ok(doc: str) -> str:
     return d
 
 
-def validar_cadastro(nome: str, documento: str, email: str, celular: str, cidade: str, login: str,
-                     senha: str) -> dict:
-    """Confere os dados do cadastro antes de mandar o codigo por e-mail: {"erro"} ou os dados limpos."""
-    email = (email or "").strip().lower()
-    celular = re.sub(r"\D", "", celular or "")
-    if celular.startswith("55") and len(celular) > 11:
-        celular = celular[2:]
-    doc = documento_ok(documento)
-    if not (nome or "").strip():
-        return {"erro": "Informe seu nome ou a razão social."}
-    if not doc:
-        return {"erro": "CPF ou CNPJ inválido. Confira os números."}
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-        return {"erro": "Informe um e-mail válido."}
+def consulta_cnpj(cnpj: str) -> dict:
+    """Dados publicos do CNPJ (opencnpj) para preencher o cadastro: {"erro"} ou os campos da empresa.
+    Se o servico estiver fora do ar devolve {"indisponivel": True}: o cadastro segue e o gestor confere."""
+    import requests
+    c = documento_ok(cnpj)
+    if len(c) != 14:
+        return {"erro": "CNPJ inválido. Confira os números."}
+    try:
+        r = requests.get(f"https://api.opencnpj.org/{c}", timeout=10)
+    except requests.RequestException:
+        return {"indisponivel": True}
+    if r.status_code == 404:
+        return {"erro": "CNPJ não encontrado na Receita Federal."}
+    if r.status_code != 200:
+        return {"indisponivel": True}
+    j = r.json()
+    tel = (j.get("telefones") or [{}])[0]
+    tipo, log = (j.get("tipo_logradouro") or "").strip(), (j.get("logradouro") or "").strip()
+    rua = log if (not tipo or log.upper().startswith(tipo.upper())) else f"{tipo} {log}"
+    return {"ok": True, "cnpj": c, "situacao": j.get("situacao_cadastral") or "",
+            "razao": j.get("razao_social") or "", "fantasia": j.get("nome_fantasia") or "",
+            "cep": re.sub(r"\D", "", j.get("cep") or ""), "logradouro": rua.title(),
+            "numero": j.get("numero") or "", "complemento": " ".join((j.get("complemento") or "").split()).title(),
+            "bairro": (j.get("bairro") or "").title(), "cidade": (j.get("municipio") or "").title(),
+            "uf": j.get("uf") or "", "email": (j.get("email") or "").lower(),
+            "telefone": f"{tel.get('ddd') or ''}{tel.get('numero') or ''}"}
+
+
+def consulta_cep(cep: str) -> dict:
+    """Endereco pelo CEP (ViaCEP), para quando a Receita nao traz o endereco."""
+    import requests
+    c = re.sub(r"\D", "", cep or "")
+    if len(c) != 8:
+        return {"erro": "CEP inválido."}
+    try:
+        j = requests.get(f"https://viacep.com.br/ws/{c}/json/", timeout=8).json()
+    except (requests.RequestException, ValueError):
+        return {"indisponivel": True}
+    if j.get("erro"):
+        return {"erro": "CEP não encontrado."}
+    return {"ok": True, "logradouro": j.get("logradouro") or "", "bairro": j.get("bairro") or "",
+            "cidade": j.get("localidade") or "", "uf": j.get("uf") or ""}
+
+
+def _fone(txt: str) -> str:
+    f = re.sub(r"\D", "", txt or "")
+    return f[2:] if f.startswith("55") and len(f) > 11 else f
+
+
+def _email_ok(e: str) -> bool:
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e))
+
+
+def validar_cadastro(f: dict) -> dict:
+    """Confere o formulario de cadastro (so PJ) antes de mandar o codigo por e-mail.
+    Devolve {"erro"} ou {"ok": True, ...dados limpos}. O e-mail do representante e o que recebe o codigo."""
+    def g(k):
+        return (f.get(k) or "").strip()
+    emp_cnpj, cpf = documento_ok(g("emp_cnpj")), documento_ok(g("cpf"))
+    email, emp_email = g("email").lower(), g("emp_email").lower()
+    celular, emp_tel = _fone(g("celular")), _fone(g("emp_telefone"))
+    cep = re.sub(r"\D", "", g("emp_cep"))
+    uf = g("emp_uf").upper()
+    login = _login_ok(g("login"))
+    if len(emp_cnpj) != 14:
+        return {"erro": "CNPJ da empresa inválido. Confira os números."}
+    if not g("emp_razao"):
+        return {"erro": "Informe a razão social."}
+    if len(cep) != 8 or not g("emp_logradouro") or not g("emp_numero") or not g("emp_bairro"):
+        return {"erro": "Complete o endereço da empresa: CEP, logradouro, número e bairro."}
+    if not g("emp_cidade") or len(uf) != 2:
+        return {"erro": "Informe a cidade e o estado (UF) da empresa."}
+    if not _email_ok(emp_email):
+        return {"erro": "Informe um e-mail válido para a empresa."}
+    if len(emp_tel) not in (10, 11):
+        return {"erro": "Informe o telefone da empresa com DDD."}
+    if len(g("nome").split()) < 2:
+        return {"erro": "Informe o nome completo do representante."}
+    if len(cpf) != 11:
+        return {"erro": "CPF do representante inválido. Confira os números."}
+    if not _email_ok(email):
+        return {"erro": "Informe um e-mail válido para o representante."}
     if len(celular) not in (10, 11):
-        return {"erro": "Informe o celular com DDD (ex.: 71 99999-8888)."}
-    if not (cidade or "").strip():
-        return {"erro": "Informe sua cidade."}
-    if not _login_ok(login):
+        return {"erro": "Informe o celular do representante com DDD (ex.: 71 99999-8888)."}
+    if f.get("exp_vendas") is None or f.get("exp_totvs") is None or f.get("exp_outro_erp") is None:
+        return {"erro": "Responda as três perguntas do perfil comercial (Sim ou Não)."}
+    anos = f.get("exp_vendas_anos")
+    if f["exp_vendas"] and not (isinstance(anos, int) and 1 <= anos <= 60):
+        return {"erro": "Informe há quantos anos você tem experiência com vendas."}
+    if f["exp_outro_erp"] and not g("exp_outro_erp_qual"):
+        return {"erro": "Informe qual outro ERP você conhece."}
+    if f.get("perfil") not in (1, 2):
+        return {"erro": "Escolha o perfil de atuação (Perfil 1 ou Perfil 2)."}
+    vezes = f.get("disp_vezes")
+    periodos = [p for p in (f.get("disp_periodos") or []) if p in PERIODOS]
+    if vezes not in (1, 2, 3, 4, 5):
+        return {"erro": "Escolha quantas vezes por semana você pode usar a plataforma."}
+    if not periodos:
+        return {"erro": "Escolha pelo menos um período de disponibilidade."}
+    if not login:
         return {"erro": "Escolha um login (letras, números, ponto ou traço)."}
-    if len(senha or "") < 8:
+    if len(f.get("senha") or "") < 8:
         return {"erro": "A senha precisa ter pelo menos 8 caracteres."}
+    sit = consulta_cnpj(emp_cnpj)                   # a Receita fora do ar nao trava o cadastro
+    if sit.get("ok") and not sit["situacao"].lower().startswith("ativa"):
+        return {"erro": f"O CNPJ consta como {sit['situacao'] or 'não ativo'} na Receita Federal."}
     with dados.engine().connect() as conn:
-        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE documento = :d"), {"d": doc}).first():
-            return {"erro": "Já existe um cadastro com esse CPF/CNPJ."}
-        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE lower(email) = :e"), {"e": email}).first():
-            return {"erro": "Já existe um cadastro com esse e-mail."}
-        if conn.execute(sa.text("SELECT 1 FROM crm_vendedores WHERE login = :l"), {"l": _login_ok(login)}).first():
-            return {"erro": f"Já existe alguém com o login '{_login_ok(login)}'. Escolha outro."}
-    return {"ok": True, "nome": nome.strip(), "documento": doc, "email": email, "celular": celular,
-            "cidade": cidade.strip(), "login": _login_ok(login), "senha": senha}
+        for col, val, msg in (("emp_cnpj", emp_cnpj, "Já existe um cadastro com esse CNPJ."),
+                              ("documento", cpf, "Já existe um cadastro com esse CPF."),
+                              ("lower(email)", email, "Já existe um cadastro com esse e-mail."),
+                              ("login", login, f"Já existe alguém com o login '{login}'. Escolha outro.")):
+            if conn.execute(sa.text(f"SELECT 1 FROM crm_vendedores WHERE {col} = :v"), {"v": val}).first():
+                return {"erro": msg}
+    return {"ok": True, "nome": g("nome"), "documento": cpf, "email": email, "celular": celular, "login": login,
+            "senha": f["senha"], "cidade": f"{g('emp_cidade')}/{uf}",
+            "emp_razao": g("emp_razao"), "emp_fantasia": g("emp_fantasia") or None, "emp_cnpj": emp_cnpj,
+            "emp_cep": cep, "emp_logradouro": g("emp_logradouro"), "emp_numero": g("emp_numero"),
+            "emp_complemento": g("emp_complemento") or None, "emp_bairro": g("emp_bairro"),
+            "emp_cidade": g("emp_cidade"), "emp_uf": uf, "emp_email": emp_email, "emp_telefone": emp_tel,
+            "exp_vendas": bool(f["exp_vendas"]), "exp_vendas_anos": anos if f["exp_vendas"] else None,
+            "exp_totvs": bool(f["exp_totvs"]), "exp_outro_erp": bool(f["exp_outro_erp"]),
+            "exp_outro_erp_qual": g("exp_outro_erp_qual") if f["exp_outro_erp"] else None,
+            "disp_vezes": vezes, "disp_periodos": ",".join(periodos), "perfil_atuacao": f["perfil"]}
+
+
+_CAMPOS_PJ = ("emp_razao", "emp_fantasia", "emp_cnpj", "emp_cep", "emp_logradouro", "emp_numero", "emp_complemento",
+              "emp_bairro", "emp_cidade", "emp_uf", "emp_email", "emp_telefone", "exp_vendas", "exp_vendas_anos",
+              "exp_totvs", "exp_outro_erp", "exp_outro_erp_qual", "disp_vezes", "disp_periodos", "perfil_atuacao")
 
 
 def cadastrar(d: dict, ip: str | None) -> dict:
     """Cadastro aberto (depois de confirmar o e-mail): cria o vendedor PENDENTE (nao entra) ate um
     administrador aprovar. Guarda o aceite dos termos (versao, data e IP), como pede a clausula 8.2."""
-    d = validar_cadastro(d["nome"], d["documento"], d["email"], d["celular"], d["cidade"], d["login"], d["senha"])
+    texto, hash_, aceites = d["contrato_texto"], d["contrato_hash"], d["aceites"]
+    d = validar_cadastro(d["form"])
     if d.get("erro"):
         return d
     r = criar(d["nome"], d["login"], d["senha"])
     if r.get("erro"):
         return r
+    sets = ", ".join(f"{c} = :{c}" for c in _CAMPOS_PJ)
     with dados.engine().begin() as conn:
         conn.execute(sa.text(
-            "UPDATE crm_vendedores SET ativo = FALSE, pendente = TRUE, documento = :doc, email = :e, celular = :c, "
-            "cidade = :ci, termos_versao = :tv, termos_aceite_em = :ta, termos_ip = :ip WHERE login = :l"),
+            f"UPDATE crm_vendedores SET ativo = FALSE, pendente = TRUE, documento = :doc, email = :e, celular = :c, "
+            f"cidade = :ci, termos_versao = :tv, termos_aceite_em = :ta, termos_ip = :ip, {sets} WHERE login = :l"),
             {"doc": d["documento"], "e": d["email"], "c": d["celular"], "ci": d["cidade"][:80], "tv": TERMOS_VERSAO,
-             "ta": dados.agora(), "ip": (ip or "")[:45] or None, "l": d["login"]})
+             "ta": dados.agora(), "ip": (ip or "")[:45] or None, "l": d["login"], **{c: d[c] for c in _CAMPOS_PJ}})
+        vid = conn.execute(sa.text("SELECT id FROM crm_vendedores WHERE login = :l"), {"l": d["login"]}).scalar()
+        conn.execute(sa.text(
+            "INSERT INTO crm_contratos (vendedor_id, versao, texto, hash, aceites, aceito_em, aceito_ip) "
+            "VALUES (:v, :ve, :t, :h, :a, :q, :ip)"),
+            {"v": vid, "ve": TERMOS_VERSAO, "t": texto, "h": hash_, "a": aceites, "q": dados.agora(),
+             "ip": (ip or "")[:45] or None})
     return {"ok": True}
 
 
 def pendentes() -> list[dict]:
     with dados.engine().connect() as conn:
-        return _q(conn, "SELECT id, nome, login, documento, email, celular, cidade, criado_em, termos_versao, termos_aceite_em "
-                        "FROM crm_vendedores WHERE pendente ORDER BY criado_em")
+        return _q(conn, "SELECT id, nome, login, documento, email, celular, cidade, criado_em, termos_versao, "
+                        "termos_aceite_em, " + ", ".join(_CAMPOS_PJ) + " FROM crm_vendedores WHERE pendente "
+                        "ORDER BY criado_em")
+
+
+BANCOS = ["001 – Banco do Brasil", "033 – Santander", "104 – Caixa Econômica", "237 – Bradesco", "341 – Itaú",
+          "260 – Nubank", "077 – Inter", "336 – C6 Bank", "290 – PagBank", "380 – PicPay", "748 – Sicredi",
+          "756 – Sicoob", "422 – Safra", "070 – BRB", "Outro"]
+TIPOS_CONTA = ["Conta corrente", "Conta de pagamento", "Poupança"]
+TIPOS_PIX = ["CNPJ", "E-mail", "Celular", "Chave aleatória"]
+
+
+def precisa_pagamento(u: dict) -> bool:
+    """Vendedor PJ aprovado que ainda nao informou onde receber a comissao (o contrato depende disso)."""
+    return bool(u.get("emp_cnpj")) and not u.get("admin") and not u.get("pg_atualizado_em")
+
+
+def validar_pagamento(f: dict, emp_cnpj: str) -> dict:
+    """Confere os dados de pagamento. A conta e a chave PIX tem de ser DA EMPRESA (mesmo CNPJ do cadastro).
+    Vale conta completa OU chave PIX; pode mandar as duas."""
+    g = lambda k: (f.get(k) or "").strip()
+    agencia, conta = re.sub(r"\D", "", g("agencia")), re.sub(r"[^0-9xX-]", "", g("conta"))
+    banco, tipo_conta = g("banco"), g("tipo_conta")
+    pix_tipo, pix = g("pix_tipo"), g("pix_chave")
+    tem_conta = any((agencia, conta, banco))
+    if not (tem_conta or pix):
+        return {"erro": "Informe a conta bancária ou a chave PIX da empresa."}
+    if tem_conta:
+        if banco not in BANCOS or tipo_conta not in TIPOS_CONTA or not agencia or len(conta) < 3:
+            return {"erro": "Complete a conta: banco, tipo, agência e número com dígito."}
+    if pix:
+        if pix_tipo == "CNPJ":
+            if re.sub(r"\D", "", pix) != emp_cnpj:
+                return {"erro": "A chave PIX do tipo CNPJ precisa ser o CNPJ da sua empresa."}
+            pix = emp_cnpj
+        elif pix_tipo == "E-mail":
+            pix = pix.lower()
+            if not _email_ok(pix):
+                return {"erro": "Chave PIX (e-mail) inválida."}
+        elif pix_tipo == "Celular":
+            pix = _fone(pix)
+            if len(pix) != 11:
+                return {"erro": "Chave PIX (celular) inválida. Use DDD + número."}
+        elif pix_tipo == "Chave aleatória":
+            if not re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", pix):
+                return {"erro": "Chave aleatória inválida (formato 8-4-4-4-12)."}
+            pix = pix.lower()
+        else:
+            return {"erro": "Escolha o tipo da chave PIX."}
+    return {"ok": True, "pg_banco": banco if tem_conta else None, "pg_agencia": agencia or None,
+            "pg_conta": conta or None, "pg_tipo_conta": tipo_conta if tem_conta else None,
+            "pg_pix_tipo": pix_tipo if pix else None, "pg_pix_chave": pix or None}
+
+
+def salvar_pagamento(u: dict, f: dict) -> dict:
+    """Grava os dados de pagamento do proprio vendedor (so uma vez: depois, so o gestor libera nova edicao)."""
+    v = por_id(u["id"])
+    if not v or not v.get("emp_cnpj"):
+        return {"erro": "Cadastro de empresa não encontrado."}
+    if v.get("pg_atualizado_em"):
+        return {"erro": "Seus dados de pagamento já foram enviados. Para alterar, fale com o gestor."}
+    d = validar_pagamento(f, v["emp_cnpj"])
+    if d.get("erro"):
+        return d
+    cols = ("pg_banco", "pg_agencia", "pg_conta", "pg_tipo_conta", "pg_pix_tipo", "pg_pix_chave")
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("UPDATE crm_vendedores SET " + ", ".join(f"{c} = :{c}" for c in cols) +
+                             ", pg_atualizado_em = :q WHERE id = :i"),
+                     {**{c: d[c] for c in cols}, "q": dados.agora(), "i": u["id"]})
+    return {"ok": True}
+
+
+def pagamento(vendedor_id: int) -> dict:
+    """Empresa + dados de pagamento, para o gestor montar o contrato."""
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT emp_razao, emp_cnpj, pg_banco, pg_agencia, pg_conta, pg_tipo_conta, pg_pix_tipo, "
+                     "pg_pix_chave, pg_atualizado_em FROM crm_vendedores WHERE id = :i", i=vendedor_id)
+    return r[0] if r else {}
+
+
+def liberar_pagamento(vendedor_id: int) -> dict:
+    """O gestor pede novo preenchimento (a pessoa volta a ver a tela de pagamento no proximo acesso)."""
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("UPDATE crm_vendedores SET pg_atualizado_em = NULL WHERE id = :i"), {"i": vendedor_id})
+    return {"ok": True, "mensagem": "Pagamento liberado: a pessoa preenche de novo no próximo acesso."}
+
+
+PRAZO_CONTRATO_DIAS = 7
+PDF_MAX_BYTES = 5 * 1024 * 1024
+
+
+def contrato_do(vendedor_id: int) -> dict | None:
+    """Contrato aceito no cadastro (sem o arquivo assinado) + situacao: 'ok', 'prazo' (pendente, dentro dos 7 dias)
+    ou 'bloqueado' (pendente e vencido). Quem nao tem contrato (cadastro antigo) nao tem pendencia."""
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT id, vendedor_id, versao, hash, aceito_em, status, prazo_ate, assinado_nome, enviado_em, "
+                     "conferido_em, conferido_por, obs FROM crm_contratos WHERE vendedor_id = :i", i=vendedor_id)
+    if not r:
+        return None
+    c = r[0]
+    if c["status"] != "aguardando" or not c["prazo_ate"]:
+        c["situacao"], c["dias"] = "ok", None
+    else:
+        resta = c["prazo_ate"] - dados.agora()
+        c["dias"] = max(0, -(-resta.total_seconds() // 86400))
+        c["situacao"] = "prazo" if resta.total_seconds() > 0 else "bloqueado"
+    return c
+
+
+def contrato_texto(vendedor_id: int) -> str:
+    with dados.engine().connect() as conn:
+        r = conn.execute(sa.text("SELECT texto FROM crm_contratos WHERE vendedor_id = :i"), {"i": vendedor_id}).scalar()
+    return r or ""
+
+
+def contrato_assinado_arquivo(vendedor_id: int) -> tuple[str, bytes] | None:
+    with dados.engine().connect() as conn:
+        r = conn.execute(sa.text("SELECT assinado_nome, assinado_pdf FROM crm_contratos WHERE vendedor_id = :i"),
+                         {"i": vendedor_id}).first()
+    return (r[0], bytes(r[1])) if r and r[1] else None
+
+
+def enviar_contrato_assinado(vendedor_id: int, nome_arquivo: str, conteudo: bytes) -> dict:
+    """O vendedor sobe o PDF assinado no gov.br. Regulariza a pendencia; o gestor confere depois."""
+    if not conteudo.startswith(b"%PDF"):
+        return {"erro": "Envie o contrato em PDF (o arquivo assinado pelo gov.br)."}
+    if len(conteudo) > PDF_MAX_BYTES:
+        return {"erro": "O arquivo passa de 5 MB."}
+    with dados.engine().begin() as conn:
+        n = conn.execute(sa.text(
+            "UPDATE crm_contratos SET assinado_pdf = :b, assinado_nome = :n, enviado_em = :q, status = 'enviado', "
+            "obs = NULL WHERE vendedor_id = :i AND status IN ('aguardando', 'recusado')"),
+            {"b": conteudo, "n": (nome_arquivo or "contrato.pdf")[:120], "q": dados.agora(), "i": vendedor_id}).rowcount
+    if not n:
+        return {"erro": "Este contrato já foi enviado ou conferido."}
+    return {"ok": True, "mensagem": "Contrato assinado enviado. O gestor vai conferir a assinatura."}
+
+
+def conferir_contrato(vendedor_id: int, por: str, aceito: bool, obs: str = "") -> dict:
+    """O gestor confere a assinatura (validador do ITI). Recusado: volta a pendente com mais 7 dias."""
+    with dados.engine().begin() as conn:
+        if aceito:
+            n = conn.execute(sa.text("UPDATE crm_contratos SET status = 'conferido', conferido_em = :q, conferido_por = :p, "
+                                     "obs = NULL, prazo_ate = NULL WHERE vendedor_id = :i AND status = 'enviado'"),
+                             {"q": dados.agora(), "p": por, "i": vendedor_id}).rowcount
+        else:
+            n = conn.execute(sa.text("UPDATE crm_contratos SET status = 'aguardando', obs = :o, prazo_ate = :pz, "
+                                     "assinado_pdf = NULL, assinado_nome = NULL, enviado_em = NULL "
+                                     "WHERE vendedor_id = :i AND status = 'enviado'"),
+                             {"o": (obs or "")[:300] or "Assinatura não validada", "i": vendedor_id,
+                              "pz": dados.agora() + dt.timedelta(days=PRAZO_CONTRATO_DIAS)}).rowcount
+    if not n:
+        return {"erro": "Não há contrato enviado aguardando conferência."}
+    return {"ok": True, "mensagem": "Contrato conferido." if aceito else "Contrato devolvido: novo prazo de 7 dias."}
+
+
+def prorrogar_contrato(vendedor_id: int, dias: int = PRAZO_CONTRATO_DIAS) -> dict:
+    with dados.engine().begin() as conn:
+        conn.execute(sa.text("UPDATE crm_contratos SET prazo_ate = :p WHERE vendedor_id = :i AND status = 'aguardando'"),
+                     {"p": dados.agora() + dt.timedelta(days=dias), "i": vendedor_id})
+    return {"ok": True, "mensagem": f"Prazo prorrogado: mais {dias} dias a partir de hoje."}
 
 
 def aprovar(vendedor_id: int, aprovado: bool) -> dict:
@@ -308,6 +638,9 @@ def aprovar(vendedor_id: int, aprovado: bool) -> dict:
         if aprovado:
             n = conn.execute(sa.text("UPDATE crm_vendedores SET ativo = TRUE, pendente = FALSE "
                                      "WHERE id = :i AND pendente"), {"i": vendedor_id}).rowcount
+            if n:
+                conn.execute(sa.text("UPDATE crm_contratos SET prazo_ate = :p WHERE vendedor_id = :i AND prazo_ate IS NULL"),
+                             {"p": dados.agora() + dt.timedelta(days=PRAZO_CONTRATO_DIAS), "i": vendedor_id})
         else:
             n = conn.execute(sa.text("DELETE FROM crm_vendedores WHERE id = :i AND pendente"),
                              {"i": vendedor_id}).rowcount
@@ -406,7 +739,9 @@ def visao_geral(dias: int = 7) -> dict:
 def lista() -> list[dict]:
     with dados.engine().connect() as conn:
         return _q(conn, "SELECT v.id, v.nome, v.login, v.admin, v.ativo, v.ultimo_acesso, "
-                        "(SELECT count(*) FROM crm_carteira c WHERE c.vendedor_id = v.id) AS clientes "
+                        "(SELECT count(*) FROM crm_carteira c WHERE c.vendedor_id = v.id) AS clientes, "
+                        "v.emp_cnpj, v.pg_atualizado_em, (SELECT k.status FROM crm_contratos k WHERE k.vendedor_id = v.id) AS contrato_status, "
+                        "(SELECT k.prazo_ate FROM crm_contratos k WHERE k.vendedor_id = v.id) AS contrato_prazo "
                         "FROM crm_vendedores v WHERE NOT v.pendente ORDER BY v.ativo DESC, v.nome")
 
 
