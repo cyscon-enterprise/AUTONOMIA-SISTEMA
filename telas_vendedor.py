@@ -936,7 +936,7 @@ def ficha_cliente(cnpj: str) -> None:
         linha = [("ch", c["quando"], c) for c in f["chamadas"]]
         linha += [("h", h["quando"], h) for h in f["historico"] if not str(h.get("texto") or "").startswith("Discador 3C")]
         linha.sort(key=lambda x: x[1] or dt.datetime.min, reverse=True)
-        with st.container(height=460, border=True):
+        with st.container(border=True):          # sem altura fixa: a pagina cresce, sem barra de rolagem propria
             if not linha and not e.get("historico"):
                 st.caption("Sem histórico ainda.")
             for tipo, _, x in linha:

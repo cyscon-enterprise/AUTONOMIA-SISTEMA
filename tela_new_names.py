@@ -186,7 +186,7 @@ def ver_ficha(lead_id: int) -> None:
         linha = [("lig", g["pedido_em"], g) for g in f["ligacoes"]]
         linha += [("nota", h["quando"], h) for h in f["historico"] if not h.get("ligacao_id")]
         linha.sort(key=lambda x: x[1], reverse=True)
-        with st.container(height=420, border=True):
+        with st.container(border=True):          # sem altura fixa: a pagina cresce, sem barra de rolagem propria
             for tipo, _, x in linha:
                 if tipo == "lig":
                     item_ligacao(x)
