@@ -33,10 +33,79 @@ def avisar(r: dict) -> None:
 
 
 def mostrar_msg() -> None:
+    abrir_dialogo_ligacao()
     if ss.get("msg"):
         tipo, texto = ss.msg
         (st.error if tipo == "erro" else st.success)(texto)
         ss.msg = None
+
+
+# ---------------------------------------------------------------- ligacao que nao saiu: pop-up com a causa e o que fazer
+
+def _sem_escape(txt: str) -> str:
+    """A 3C devolve o texto com \\u00e7 etc.: volta para letras de verdade."""
+    return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), str(txt or ""))
+
+
+def explicar_erro_ligacao(msg: str, conectado: bool, ramal: str) -> dict:
+    """Traduz o erro da 3C em: titulo, causa e passos. `conectado`: o vendedor ja entrou no ramal pelo sistema."""
+    t = _sem_escape(msg).lower()
+    if "422" in t or "logado" in t or "agente" in t or "ramal nao esta" in t or "ramal não está" in t:
+        passos = ([] if conectado else
+                  ["No menu à esquerda, clique em **Conectar telefone** e entre com o seu ramal."])
+        passos += [f"Confira se o ramal **{ramal}** está **logado e disponível** (não em pausa nem ocupado) no discador da 3C Plus.",
+                   "Se acabou de entrar, espere uns 10 segundos para o ramal ficar disponível.",
+                   "Clique no telefone do cliente de novo. Primeiro toca o seu ramal: atenda, e a 3C disca para o cliente."]
+        causa = ("A 3C Plus recusou a ligação porque o seu ramal **não está logado ou não está disponível** agora."
+                 + ("" if conectado else " Você ainda não conectou o telefone neste sistema."))
+        return {"titulo": "Seu ramal não está conectado", "causa": causa, "passos": passos}
+    if "já pedi" in t or "ja pedi" in t:
+        return {"titulo": "Já existe um pedido de ligação para esse número",
+                "causa": "Você pediu a ligação para esse mesmo telefone há poucos segundos.",
+                "passos": [f"Veja se o ramal **{ramal}** está tocando ou em chamada.",
+                           "Se não tocou, espere um minuto e tente de novo."]}
+    if "401" in t or "403" in t or "token" in t:
+        return {"titulo": "O sistema perdeu o acesso à 3C",
+                "causa": "A 3C Plus recusou a chave de acesso do sistema (expirada ou sem permissão). Isso não é um problema seu.",
+                "passos": ["Avise o administrador para renovar a chave da 3C nas configurações do site.",
+                           "Enquanto isso, ligue pelo telefone web da 3C ou pelo discador."]}
+    if "nao consegui falar" in t or "não consegui falar" in t or "timeout" in t:
+        return {"titulo": "A 3C não respondeu",
+                "causa": "O sistema não conseguiu falar com a 3C Plus agora (instabilidade de internet ou da 3C).",
+                "passos": ["Espere cerca de um minuto e tente de novo.",
+                           f"Antes de repetir, veja se o ramal **{ramal}** chegou a tocar: a ligação pode ter saído.",
+                           "Se continuar, avise o administrador."]}
+    return {"titulo": "A ligação não saiu",
+            "causa": "A 3C Plus não aceitou o pedido de ligação.",
+            "passos": ["Confira se o seu ramal está logado e disponível na 3C Plus.",
+                       "Tente de novo em alguns segundos.", "Se repetir, envie o texto dos detalhes técnicos ao administrador."]}
+
+
+@st.dialog("Não foi possível ligar")
+def _dialogo_ligacao(info: dict) -> None:
+    st.markdown(f"#### {info['titulo']}")
+    st.write(info["causa"])
+    st.markdown("**O que fazer:**")
+    for i, p in enumerate(info["passos"], 1):
+        st.markdown(f"{i}. {p}")
+    with st.expander("Detalhes técnicos (para o administrador)"):
+        st.code(info["tecnico"], language=None)
+    if st.button("Entendi", type="primary", use_container_width=True):
+        st.rerun()
+
+
+def erro_ligacao(msg: str, ramal: str | None = None) -> None:
+    """Em vez de uma faixa vermelha com o erro cru da 3C, guarda o aviso para abrir como pop-up na proxima tela."""
+    ramal = ramal or (ss.get("sessao3c") or {}).get("ramal") or "1003"
+    info = explicar_erro_ligacao(msg, bool(ss.get("sessao3c")), ramal)
+    info["tecnico"] = _sem_escape(msg)[:600]
+    ss.dialogo_ligacao = info
+
+
+def abrir_dialogo_ligacao() -> None:
+    info = ss.pop("dialogo_ligacao", None)
+    if info:
+        _dialogo_ligacao(info)
 
 
 def faixa(icone: str, titulo: str, sub: str = "", numeros: list[tuple[str, object]] | None = None) -> None:
@@ -896,7 +965,7 @@ def ficha_cliente(cnpj: str) -> None:
                         V.registrar(eu(), cnpj, "ligacao", f"Ligação pedida à 3C para {t['exibir']} (ramal {ramal})")
                         ss.msg = ("ok", f"Ligando: o ramal {ramal} toca primeiro, atenda para discar.")
                     except tresc.Erro3C as err:
-                        ss.msg = ("erro", f"3C: {err}")
+                        erro_ligacao(str(err), ramal)
                 st.rerun()
         incluir_contato(cnpj, registrar=lambda tipo, texto: V.registrar(eu(), cnpj, tipo, texto))
         st.caption(f"O ramal {ramal} toca primeiro; ao atender, a 3C disca para o cliente. "

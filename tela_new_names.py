@@ -220,7 +220,11 @@ def ver_ficha(lead_id: int) -> None:
             if st.button(f"☎ {t['exibir']}  ·  {', '.join(t['rotulos'])}", key=f"lig{lead_id}{t['tel']}",
                          use_container_width=True):
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
-                    avisar(dados.ligar(lead_id, t["tel"], ss.quem, ramal_atual()))
+                    r = dados.ligar(lead_id, t["tel"], ss.quem, ramal_atual())
+                    if r.get("erro"):
+                        telas_vendedor.erro_ligacao(r["erro"], ramal_atual())
+                    else:
+                        avisar(r)
                 st.rerun()
         telas_vendedor.incluir_contato(L.get("cnpj"), lead_id)
         st.caption(f"O ramal {ramal_atual()} toca primeiro; ao atender, a 3C disca para o cliente.")
@@ -359,6 +363,7 @@ def pagina() -> None:
         busca = st.text_input("Buscar empresa, CNPJ ou cidade")
         so_atrasados = st.checkbox("Só retornos atrasados")
 
+    telas_vendedor.abrir_dialogo_ligacao()
     if ss.msg:
         tipo, texto = ss.msg
         {"erro": st.error, "aviso": st.warning}.get(tipo, st.success)(texto)
