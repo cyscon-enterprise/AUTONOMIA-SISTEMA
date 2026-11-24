@@ -209,7 +209,7 @@ def ver_ficha(lead_id: int) -> None:
             bloco_ligacao(aberta)
         st.markdown("#### Contato")
         telas_vendedor.botoes_contato(L.get("nome_fantasia") or L.get("razao_social") or "",
-                                      telas_vendedor.emails_de(L), f["telefones"], f"nn{lead_id}",
+                                      telas_vendedor.emails_da_ficha(L, L.get("cnpj")), f["telefones"], f"nn{lead_id}",
                                       lambda tipo, texto: dados.interagir(lead_id, tipo, texto, ss.quem),
                                       cnpj=L.get("cnpj"), lead_id=lead_id)
         st.markdown("#### Ligar pela 3C")
@@ -222,7 +222,7 @@ def ver_ficha(lead_id: int) -> None:
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
                     avisar(dados.ligar(lead_id, t["tel"], ss.quem, ramal_atual()))
                 st.rerun()
-        telas_vendedor.incluir_telefone(L.get("cnpj"), lead_id)
+        telas_vendedor.incluir_contato(L.get("cnpj"), lead_id)
         st.caption(f"O ramal {ramal_atual()} toca primeiro; ao atender, a 3C disca para o cliente.")
 
         st.markdown("#### Etapa e retorno")

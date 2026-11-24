@@ -137,7 +137,7 @@ def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: 
         cels = [t for t in telefones if celular(t["tel"])]
         if not cels:
             st.caption("WhatsApp precisa de um celular (11 dígitos começando com 9). "
-                       "Inclua um em ➕ Incluir telefone.")
+                       "Inclua um em ➕ Incluir contato.")
         else:
             op = {f"{t['exibir']} · {', '.join(t['rotulos'])}": t for t in cels}
             t = op[st.selectbox("Celular", list(op), key=f"wa{chave}")]
@@ -152,15 +152,43 @@ def botoes_contato(nome_empresa: str, emails: list[tuple[str, str]], telefones: 
             st.caption("Abre o WhatsApp com a mensagem pronta. Depois de mandar, clique em Registrar.")
 
 
-def incluir_telefone(cnpj: str, lead_id: int | None = None) -> None:
-    """Campo para incluir um telefone novo; depois de salvo ele vira um botao de ligar pela 3C."""
-    with st.popover("➕ Incluir telefone", use_container_width=True):
-        with st.form(f"novotel{cnpj}", clear_on_submit=True):
-            tel = st.text_input("Telefone com DDD", placeholder="(11) 91234-5678")
+def incluir_contato(cnpj: str, lead_id: int | None = None, registrar=None) -> None:
+    """Incluir um contato novo na ficha: telefone (vira botao de ligar pela 3C), e-mail (entra na lista de
+    destinatarios) ou WhatsApp (celular, entra na aba WhatsApp). `registrar(tipo, texto)` grava no historico
+    quando a ficha nao tem lead do funil."""
+    quem = ss.get("quem") or eu()["nome"]
+    with st.popover("➕ Incluir contato", use_container_width=True):
+        tipo = st.radio("O que incluir?", ["Telefone", "E-mail", "WhatsApp"], horizontal=True, key=f"tipoc{cnpj}")
+        with st.form(f"novoc{cnpj}{tipo}", clear_on_submit=True):
+            if tipo == "E-mail":
+                valor = st.text_input("E-mail", placeholder="nome@empresa.com.br")
+            elif tipo == "WhatsApp":
+                valor = st.text_input("Celular com DDD", placeholder="(11) 91234-5678")
+            else:
+                valor = st.text_input("Telefone com DDD", placeholder="(11) 91234-5678")
             rot = st.text_input("De quem é (opcional)", placeholder="ex.: Carlos, gerente de TI")
-            if st.form_submit_button("Salvar telefone", type="primary", use_container_width=True):
-                avisar(dados.adicionar_telefone(cnpj, tel, rot, ss.get("quem") or eu()["nome"], lead_id))
+            if st.form_submit_button({"Telefone": "Salvar telefone", "E-mail": "Salvar e-mail", "WhatsApp": "Salvar WhatsApp"}[tipo],
+                                       type="primary", use_container_width=True):
+                if tipo == "E-mail":
+                    r = dados.adicionar_email(cnpj, valor, rot, quem, lead_id)
+                elif tipo == "WhatsApp":
+                    r = dados.adicionar_whatsapp(cnpj, valor, rot, quem, lead_id)
+                else:
+                    r = dados.adicionar_telefone(cnpj, valor, rot, quem, lead_id)
+                    r["texto"] = f"Telefone incluído: {valor.strip()} ({rot.strip() or 'incluído'})"
+                    r["novo"] = "já estava" not in r.get("mensagem", "")
+                if r.get("ok") and r.get("novo") and registrar and not lead_id:
+                    registrar("nota", r["texto"])          # ficha da carteira: o historico da empresa
+                avisar(r)
                 st.rerun()
+
+
+def emails_da_ficha(reg: dict, cnpj: str | None) -> list[tuple[str, str]]:
+    """E-mails do cadastro mais os que foram incluidos a mao (sem repetir)."""
+    vistos = dict(emails_de(reg))
+    for e, rot in dados.emails_extras(cnpj):
+        vistos.setdefault(e.lower(), rot)
+    return list(vistos.items())
 
 
 def bloco_ia(chamada_3c: str, contexto: str, titulo: str, salvar_no_historico) -> None:
@@ -852,7 +880,7 @@ def ficha_cliente(cnpj: str) -> None:
                 st.text(e["historico"])
     with dir_:
         st.markdown("#### Contato")
-        botoes_contato(e.get("nome_fantasia") or e.get("nome") or "", emails_de(e), f["telefones"], cnpj,
+        botoes_contato(e.get("nome_fantasia") or e.get("nome") or "", emails_da_ficha(e, cnpj), f["telefones"], cnpj,
                        lambda tipo, texto: V.registrar(eu(), cnpj, tipo, texto), cnpj=cnpj)
         st.markdown("#### Ligar pela 3C")
         controle_ligacao_manual()
@@ -870,7 +898,7 @@ def ficha_cliente(cnpj: str) -> None:
                     except tresc.Erro3C as err:
                         ss.msg = ("erro", f"3C: {err}")
                 st.rerun()
-        incluir_telefone(cnpj)
+        incluir_contato(cnpj, registrar=lambda tipo, texto: V.registrar(eu(), cnpj, tipo, texto))
         st.caption(f"O ramal {ramal} toca primeiro; ao atender, a 3C disca para o cliente. "
                    "Fora da campanha: com o discador ligando, use o telefone da barra.")
         st.markdown("#### Etapa e retorno")

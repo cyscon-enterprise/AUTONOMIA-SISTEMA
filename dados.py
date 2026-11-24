@@ -122,6 +122,61 @@ def adicionar_telefone(cnpj: str, telefone: str, rotulo: str, quem: str, lead_id
     return {"ok": True, "mensagem": f"Telefone {formatar(d)} incluído." if n else "Esse telefone já estava na ficha."}
 
 
+def emails_extras(cnpj: str | None) -> list[tuple[str, str]]:
+    """(e-mail, rotulo) incluidos a mao na empresa, do mais recente para o mais antigo."""
+    if not cnpj:
+        return []
+    try:
+        with engine().connect() as conn:
+            return [(r["email"], r["rotulo"] or "incluído")
+                    for r in _q(conn, "SELECT email, rotulo FROM crm_emails_extra WHERE cnpj = :c ORDER BY criado_em DESC",
+                                c=cnpj)]
+    except sa.exc.DBAPIError:                      # tabela ainda nao criada
+        return []
+
+
+_EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+
+
+def adicionar_email(cnpj: str, email: str, rotulo: str, quem: str, lead_id: int | None = None) -> dict:
+    """Inclui um e-mail novo na empresa; ele aparece na lista de destinatarios do espaco de contato."""
+    e = (email or "").strip().lower()
+    if not _EMAIL_RE.fullmatch(e):
+        return {"erro": "E-mail inválido."}
+    if not cnpj:
+        return {"erro": "Empresa sem CNPJ: não dá para guardar o e-mail."}
+    rot = (rotulo or "").strip()[:40] or "incluído"
+    with engine().begin() as conn:
+        n = conn.execute(sa.text(
+            "INSERT INTO crm_emails_extra (cnpj, email, rotulo, quem, criado_em) VALUES (:c, :e, :r, :q, :w) "
+            "ON CONFLICT (cnpj, email) DO NOTHING"),
+            {"c": cnpj, "e": e, "r": rot, "q": (quem or "")[:60], "w": agora()}).rowcount
+        if n and lead_id:
+            _registrar(conn, lead_id, cnpj, "nota", quem, f"E-mail incluído: {e} ({rot})")
+    return {"ok": True, "mensagem": f"E-mail {e} incluído." if n else "Esse e-mail já estava na ficha.",
+            "novo": bool(n), "texto": f"E-mail incluído: {e} ({rot})"}
+
+
+def adicionar_whatsapp(cnpj: str, numero: str, rotulo: str, quem: str, lead_id: int | None = None) -> dict:
+    """Inclui um WhatsApp (celular): fica na ficha como telefone, com o rotulo WhatsApp, e aparece na aba WhatsApp."""
+    d = normalizar(numero)
+    if len(d) != 11 or d[2] != "9":
+        return {"erro": "WhatsApp precisa de um celular com DDD: 11 dígitos, começando com 9 depois do DDD."}
+    if not cnpj:
+        return {"erro": "Empresa sem CNPJ: não dá para guardar o WhatsApp."}
+    resto = (rotulo or "").strip()
+    rot = ("WhatsApp · " + resto)[:40] if resto else "WhatsApp"
+    with engine().begin() as conn:
+        n = conn.execute(sa.text(
+            "INSERT INTO crm_telefones_extra (cnpj, telefone, rotulo, quem, criado_em) VALUES (:c, :t, :r, :q, :w) "
+            "ON CONFLICT (cnpj, telefone) DO NOTHING"),
+            {"c": cnpj, "t": d, "r": rot, "q": (quem or "")[:60], "w": agora()}).rowcount
+        if n and lead_id:
+            _registrar(conn, lead_id, cnpj, "nota", quem, f"WhatsApp incluído: {formatar(d)} ({rot})")
+    return {"ok": True, "mensagem": f"WhatsApp {formatar(d)} incluído." if n else "Esse número já estava na ficha.",
+            "novo": bool(n), "texto": f"WhatsApp incluído: {formatar(d)} ({rot})"}
+
+
 def telefones(lead: dict, fora: set[str] | None = None, extras: list[dict] | None = None) -> list[dict]:
     vistos: dict[str, dict] = {}
     fontes = [(x["telefone"], x["rotulo"]) for x in (extras or [])]

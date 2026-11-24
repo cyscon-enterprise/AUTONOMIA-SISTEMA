@@ -108,6 +108,13 @@ DDL = [
         quem VARCHAR(60),
         criado_em TIMESTAMP NOT NULL,
         PRIMARY KEY (cnpj, telefone))""",
+    """CREATE TABLE IF NOT EXISTS crm_emails_extra (
+        cnpj VARCHAR(14) NOT NULL,
+        email VARCHAR(120) NOT NULL,
+        rotulo VARCHAR(40),
+        quem VARCHAR(60),
+        criado_em TIMESTAMP NOT NULL,
+        PRIMARY KEY (cnpj, email))""",
     """CREATE TABLE IF NOT EXISTS crm_carteira (
         cnpj VARCHAR(14) PRIMARY KEY,
         vendedor_id INTEGER NOT NULL REFERENCES crm_vendedores(id),
