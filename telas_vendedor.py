@@ -102,7 +102,92 @@ def erro_ligacao(msg: str, ramal: str | None = None) -> None:
     ss.dialogo_ligacao = info
 
 
+def _h(t: dt.datetime) -> str:
+    return f"{t.hour}h" if t.minute == 0 else f"{t.hour}h{t.minute:02d}"
+
+
+def _rotulo_turno(t: tuple, com_data: bool = False) -> str:
+    n, ini, fim = t
+    base = f"Turno {n} - das {_h(ini)} às {_h(fim)}"
+    if not com_data:
+        return base
+    dif = (ini.date() - dados.agora().date()).days
+    quando = {0: "Hoje ", 1: "Amanhã "}.get(dif, "")
+    return f"{quando}{ini:%d/%m} · {base}"
+
+
+def _escolher_reserva(opcoes: list, pergunta: str, avisos: list[str], com_data: bool) -> None:
+    """Segunda pergunta do pop-up: qual turno reservar (se so ha um, apenas confirma) + a observacao dos 10 min."""
+    for a in avisos:
+        st.markdown(a)
+    rot = {_rotulo_turno(t, com_data): t for t in opcoes}
+    if len(rot) > 1:
+        esc = st.radio(f"**{pergunta}**", list(rot), key="rv_escolha")
+    else:
+        esc = next(iter(rot))
+        st.markdown(f"**{esc}**")
+    st.caption(f"Observação: o turno fica reservado para você nos {V.RESERVA_MIN} primeiros minutos; "
+               "depois disso será liberado para os demais.")
+    c1, c2 = st.columns(2)
+    if c1.button("Reservar", type="primary", use_container_width=True, key="rv_ok"):
+        t = rot[esc]
+        pos = V.entrar_fila(eu()["id"], t, "reserva")
+        ss.msg = ("ok", f"Reserva feita: {_rotulo_turno(t, True)}. Nos {V.RESERVA_MIN} primeiros minutos o ramal "
+                        "fica reservado para você." + (f" (posição {pos} da fila)" if pos > 1 else ""))
+        st.rerun()
+    if c2.button("Cancelar", use_container_width=True, key="rv_cancel"):
+        st.rerun()
+
+
+@st.dialog("Ramal ocupado")
+def _dialogo_ocupado(info: dict) -> None:
+    if ss.get("rv_passo", 0) == 0:
+        st.markdown("**Ramal ocupado, você tem preferência para acessar no próximo turno. "
+                    "Deseja reservar seu acesso?**")
+        c1, c2 = st.columns(2)
+        if c1.button("Sim", type="primary", use_container_width=True, key="rv_sim"):
+            ss.rv_passo = 1
+            st.rerun(scope="fragment")
+        if c2.button("Não", use_container_width=True, key="rv_nao"):
+            st.rerun()
+        return
+    opcoes = info["opcoes"]
+    amanha = opcoes[0][1].date() != dados.agora().date()
+    avisos = [f"Durante os {V.RESERVA_MIN} primeiros minutos do próximo turno, o ramal estará reservado para você."]
+    if amanha:
+        avisos.insert(0, f"Você tem **preferência** para os turnos do dia seguinte ({opcoes[0][1]:%d/%m}).")
+    _escolher_reserva(opcoes, "Qual horário deseja reservar?" if amanha else "Qual turno deseja reservar?",
+                      avisos, com_data=amanha)
+
+
+@st.dialog("Turno reservado")
+def _dialogo_reservado(info: dict) -> None:
+    if ss.get("rv_passo", 0) == 0:
+        st.markdown(f"**Turno reservado para outro usuário.** Aguarde até {info['ate']:%H:%M} e tente novamente.")
+        st.markdown("**Deseja reservar um próximo turno?**")
+        c1, c2 = st.columns(2)
+        if c1.button("Sim", type="primary", use_container_width=True, key="rv_sim"):
+            ss.rv_passo = 1
+            st.rerun(scope="fragment")
+        if c2.button("Não", use_container_width=True, key="rv_nao"):
+            st.rerun()
+        return
+    _escolher_reserva(info["proximos"], "Qual turno deseja reservar?",
+                      [f"Durante os {V.RESERVA_MIN} primeiros minutos do turno escolhido, o ramal estará "
+                       "reservado para você."], com_data=True)
+
+
 def abrir_dialogo_ligacao() -> None:
+    rv = ss.pop("dialogo_reserva", None)
+    if rv:
+        ss.rv_passo = 0
+        ss.pop("rv_escolha", None)
+        (_dialogo_ocupado if rv["tipo"] == "ocupado" else _dialogo_reservado)(rv)
+        return
+    fim = ss.pop("fim_turno", None)
+    if fim:
+        _dialogo_fim_turno(fim)
+        return
     sem = ss.pop("dialogo_sem_lista", None)
     if sem:
         _dialogo_sem_lista(sem)
@@ -391,9 +476,8 @@ def _abrir_turno() -> bool:
         return True
     r = V.iniciar_turno(eu())
     if r.get("erro"):
-        outro = linha_ocupada_por_outro()
-        if outro:
-            aviso_linha_ocupada(outro)
+        if r.get("tipo") in ("ocupado", "reservado"):
+            ss.dialogo_reserva = r                       # pop-up: ramal ocupado / turno reservado -> reservar
         else:
             ss.erro3c = r["erro"]
         return False
@@ -411,11 +495,45 @@ def _conectar(ramal: str | None = None, senha: str | None = None) -> None:
                      else f"Não consegui conectar na 3C: {msg}")
 
 
-@st.fragment(run_every="60s")
+@st.fragment(run_every="20s")
 def batimento() -> None:
     """Enquanto a pagina do dono do turno estiver aberta, avisa o servidor. Aba fechada = sem sinal = o turno
-    fecha sozinho (V.INATIVO_MIN) e libera o ramal."""
-    V.sinal_turno(eu()["id"])
+    fecha sozinho (V.INATIVO_MIN) e libera o ramal. Tambem percebe o fim do turno de discagem: tira o ramal da
+    3C e abre o aviso "Turno N encerrado, deseja continuar?"."""
+    uid = eu()["id"]
+    t = V.turno_aberto()                                 # fecha os turnos vencidos (fim do turno / inatividade)
+    if t and t["vendedor_id"] == uid:
+        ss.turno_id_meu = t["id"]
+        V.sinal_turno(uid)
+        return
+    antigo = ss.pop("turno_id_meu", None)
+    if not antigo:
+        return
+    info = V.turno_encerrado(antigo)
+    if ss.get("sessao3c"):
+        sair_3c()                                        # solta o ramal na 3C
+    if info and info["fechado_por"] == "fim do turno" and info["numero"]:
+        ss.fim_turno = info
+    st.rerun()
+
+
+@st.dialog("Turno encerrado")
+def _dialogo_fim_turno(info: dict) -> None:
+    n = info["numero"]
+    prox = V.proximo_turno(dados.agora())
+    st.markdown(f"#### Turno {n:02d} encerrado, deseja continuar?")
+    dia = "hoje" if prox[1].date() == dados.agora().date() else "amanhã"
+    st.caption(f"Continuar = garantir sua vez no Turno {prox[0]} ({dia}, {prox[1]:%H:%M} às {prox[2]:%H:%M}).")
+    c1, c2 = st.columns(2)
+    if c1.button("Sim, continuar", type="primary", use_container_width=True):
+        pos = V.entrar_fila(eu()["id"], prox, "continuou")
+        ss.msg = ("ok", f"Combinado! Você tem preferência no Turno {prox[0]}"
+                        + (f" (posição {pos} da fila)." if pos > 1 else "."))
+        st.rerun()
+    if c2.button("Não", use_container_width=True):
+        st.rerun()
+    st.divider()
+    st.markdown("**Turnos**  \n" + "  \n".join(V.linhas_turnos()))
 
 
 def conectar_3c_lateral() -> None:
@@ -441,6 +559,9 @@ def conectar_3c_lateral() -> None:
             st.rerun()
     if ss.get("erro3c"):
         st.error(ss.pop("erro3c"))
+    atual = V.turno_de(dados.agora())
+    st.caption("**Turnos de discagem**  \n" + "  \n".join(
+        (f"**{l}** ← agora" if atual and l.startswith(f"Turno {atual[0]}:") else l) for l in V.linhas_turnos()))
 
 
 def sair_3c() -> None:

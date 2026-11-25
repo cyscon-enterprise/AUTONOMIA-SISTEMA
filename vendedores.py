@@ -64,6 +64,14 @@ DDL = [
         fim TIMESTAMP,
         fechado_por VARCHAR(60))""",
     "ALTER TABLE crm_discador_turnos ADD COLUMN IF NOT EXISTS ultimo_sinal TIMESTAMP",
+    """CREATE TABLE IF NOT EXISTS crm_turno_fila (
+        id SERIAL PRIMARY KEY,
+        data DATE NOT NULL,
+        turno INTEGER NOT NULL,
+        vendedor_id INTEGER NOT NULL REFERENCES crm_vendedores(id),
+        origem VARCHAR(12) NOT NULL,
+        criado_em TIMESTAMP NOT NULL,
+        UNIQUE (data, turno, vendedor_id))""",
     """CREATE TABLE IF NOT EXISTS crm_discador_chamadas (
         chamada_3c VARCHAR(40) PRIMARY KEY,
         cnpj VARCHAR(14),
@@ -771,6 +779,85 @@ def lista() -> list[dict]:
 
 # ---------------------------------------------------------------- turno no discador
 
+# Turnos de discagem (horario de Brasilia). O vendedor entra a qualquer hora DENTRO do turno e fica ate o fim
+# dele; no fim o turno fecha sozinho. Fora desses horarios so o administrador usa o discador.
+TURNOS = [(1, dt.time(8, 30), dt.time(9, 30)),
+          (2, dt.time(9, 40), dt.time(11, 40)),
+          (3, dt.time(14, 0), dt.time(16, 0))]
+RESERVA_MIN = 10          # o 1o da fila de preferencia tem este tempo, a partir do inicio do turno, so para ele
+
+
+def linhas_turnos() -> list[str]:
+    return [f"Turno {n}: {i:%H:%M} às {f:%H:%M}" for n, i, f in TURNOS]
+
+
+def turno_de(momento: dt.datetime) -> tuple[int, dt.datetime, dt.datetime] | None:
+    """O turno de discagem que contem `momento`: (numero, inicio, fim), ou None se esta fora de todos."""
+    for n, i, f in TURNOS:
+        ini, fim = dt.datetime.combine(momento.date(), i), dt.datetime.combine(momento.date(), f)
+        if ini <= momento < fim:
+            return n, ini, fim
+    return None
+
+
+def proximo_turno(momento: dt.datetime) -> tuple[int, dt.datetime, dt.datetime]:
+    """O proximo turno a comecar depois de `momento` (no fim do dia, o 1o de amanha)."""
+    for dia in (momento.date(), momento.date() + dt.timedelta(days=1)):
+        for n, i, f in TURNOS:
+            ini = dt.datetime.combine(dia, i)
+            if ini > momento:
+                return n, ini, dt.datetime.combine(dia, f)
+    raise RuntimeError("sem turnos")
+
+
+def proximos_turnos(momento: dt.datetime, k: int = 3) -> list[tuple[int, dt.datetime, dt.datetime]]:
+    """Os `k` proximos turnos que comecam depois de `momento`, na ordem (cruzando para o dia seguinte)."""
+    saida, dia = [], momento.date()
+    while len(saida) < k:
+        for n, i, f in TURNOS:
+            ini = dt.datetime.combine(dia, i)
+            if ini > momento and len(saida) < k:
+                saida.append((n, ini, dt.datetime.combine(dia, f)))
+        dia += dt.timedelta(days=1)
+    return saida
+
+
+def opcoes_reserva(momento: dt.datetime) -> list[tuple[int, dt.datetime, dt.datetime]]:
+    """Turnos que quem achou o ramal ocupado pode reservar: os que restam HOJE (no turno 1: 2 e 3; no turno 2: so
+    o 3); no ultimo turno do dia, os 3 turnos de amanha."""
+    hoje = [t for t in proximos_turnos(momento, len(TURNOS)) if t[1].date() == momento.date()]
+    return hoje or proximos_turnos(momento, len(TURNOS))
+
+
+def _fila(conn, dia, turno: int) -> list[int]:
+    return [r["vendedor_id"] for r in _q(conn, "SELECT vendedor_id FROM crm_turno_fila WHERE data = :d AND turno = :t "
+                                               "ORDER BY criado_em, id", d=dia, t=turno)]
+
+
+def entrar_fila(vendedor_id: int, turno: tuple, origem: str, conn=None) -> int:
+    """Garante a preferencia do vendedor no turno `turno` (numero, inicio, fim). Devolve a posicao na fila (1 = 1o)."""
+    def _fazer(c) -> int:
+        c.execute(sa.text("INSERT INTO crm_turno_fila (data, turno, vendedor_id, origem, criado_em) "
+                          "VALUES (:d, :t, :v, :o, :a) ON CONFLICT (data, turno, vendedor_id) DO NOTHING"),
+                  {"d": turno[1].date(), "t": turno[0], "v": vendedor_id, "o": origem, "a": dados.agora()})
+        return _fila(c, turno[1].date(), turno[0]).index(vendedor_id) + 1
+    if conn is not None:
+        return _fazer(conn)
+    with dados.engine().begin() as c:
+        return _fazer(c)
+
+
+def turno_encerrado(turno_id: int) -> dict | None:
+    """O turno de `turno_id`, se ja fechou: com o numero do turno de discagem e como fechou."""
+    with dados.engine().connect() as conn:
+        r = _q(conn, "SELECT id, inicio, fim, fechado_por FROM crm_discador_turnos WHERE id = :i AND fim IS NOT NULL",
+               i=turno_id)
+    if not r:
+        return None
+    t = turno_de(r[0]["inicio"])
+    return r[0] | {"numero": t[0] if t else None}
+
+
 def sinal_turno(vendedor_id: int) -> None:
     """Batimento: a pagina do dono do turno avisa que continua aberta (a cada ~60 s)."""
     with dados.engine().begin() as conn:
@@ -783,6 +870,13 @@ def _fechar_esquecidos(conn) -> None:
     conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = COALESCE(ultimo_sinal, inicio), "
                          "fechado_por = 'inatividade' WHERE fim IS NULL AND COALESCE(ultimo_sinal, inicio) < :lim"),
                  {"lim": dados.agora() - dt.timedelta(minutes=INATIVO_MIN)})
+    # fim do turno de discagem: quem abriu dentro de um turno sai quando ele acaba
+    agora = dados.agora()
+    for r in _q(conn, "SELECT id, inicio FROM crm_discador_turnos WHERE fim IS NULL"):
+        t = turno_de(r["inicio"])
+        if t and agora >= t[2]:
+            conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = :f, fechado_por = 'fim do turno' "
+                                 "WHERE id = :i AND fim IS NULL"), {"f": t[2], "i": r["id"]})
     conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = inicio + make_interval(hours => :h), "
                          "fechado_por = 'automatico' WHERE fim IS NULL AND inicio < :lim"),
                  {"h": TURNO_MAX_H, "lim": dados.agora() - dt.timedelta(hours=TURNO_MAX_H)})
@@ -807,8 +901,20 @@ def iniciar_turno(vend: dict) -> dict:
                 return {"ok": True, "mensagem": "Seu turno já está aberto."}
             quem = (f"{r[0]['nome']} desde {r[0]['inicio']:%H:%M}" if vend.get("admin")
                     else "outro usuário")                      # so o gestor ve quem esta ligado
-            return {"erro": f"Ramal ocupado por {quem}. A 3C tem um usuário só: espere ele encerrar o turno."}
+            # quem tentou e achou o ramal ocupado tem preferencia no proximo turno: a tela pergunta se quer reservar
+            return {"erro": f"Ramal ocupado por {quem}.", "tipo": "ocupado", "opcoes": opcoes_reserva(dados.agora())}
         agora = dados.agora()
+        if not vend.get("admin"):                               # o gestor usa o discador a qualquer hora
+            atual = turno_de(agora)
+            if not atual:
+                return {"erro": "Fora do horário dos turnos de discagem.\n\n" + "  \n".join(linhas_turnos()),
+                        "tipo": "fora"}
+            n, ini, _ = atual
+            fila = _fila(conn, ini.date(), n)
+            if fila and fila[0] != vend["id"] and agora < ini + dt.timedelta(minutes=RESERVA_MIN):
+                lib = ini + dt.timedelta(minutes=RESERVA_MIN)
+                return {"erro": f"Turno reservado para outro usuário. Aguarde até {lib:%H:%M} e tente novamente.",
+                        "tipo": "reservado", "ate": lib, "turno": n, "proximos": proximos_turnos(agora, 3)}
         conn.execute(sa.text("INSERT INTO crm_discador_turnos (vendedor_id, inicio, ultimo_sinal) VALUES (:v, :i, :i)"),
                      {"v": vend["id"], "i": agora})
     return {"ok": True, "mensagem": "Turno aberto. Tudo que o discador conectar agora é seu."}

@@ -64,14 +64,14 @@ email_envio.configurar(_segredo("SMTP_USUARIO"), _segredo("SMTP_SENHA"), _segred
 
 
 @st.cache_resource
-def _preparar() -> bool:
+def _preparar(versao_ddl: int) -> bool:           # a chave muda quando entra tabela/coluna nova: recria na hora
     V.preparar()
     ia_ligacoes.preparar()
     sessao_aba.preparar()
     return True
 
 
-_preparar()
+_preparar(len(V.DDL))
 ss = st.session_state
 ss.setdefault("usuario", None)
 ss.setdefault("lead", None)
