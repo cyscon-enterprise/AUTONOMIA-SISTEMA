@@ -101,7 +101,13 @@ DDL_INSIGHT = """CREATE TABLE IF NOT EXISTS crm_insights (
 
 SISTEMA_INSIGHT = """Você prepara um vendedor da Cyscon (revenda TOTVS de ERP e sistemas de gestão) para a ligação que ele está fazendo AGORA com uma empresa. Recebe os dados cadastrais e o histórico dessa empresa.
 
-Escreva um insight de abordagem em português do Brasil, em no máximo 5 frases curtas, só com o que os dados mostram: o que a empresa faz e o porte; a relação com a TOTVS (se é cliente, qual ERP, base, MRR, entidade); um gancho ou necessidade provável para a conversa; e uma sugestão de abertura. Não invente números, nomes nem fatos que não estejam nos dados. Sem título, sem lista, sem markdown."""
+Escreva um insight de abordagem em português do Brasil, em no máximo 5 frases curtas, só com o que os dados mostram: o que a empresa faz e o porte; a relação com a TOTVS (se é cliente, qual ERP, base, MRR, entidade); um gancho ou necessidade provável para a conversa; e uma sugestão de abertura. Não invente números, nomes nem fatos que não estejam nos dados. Sem título, sem lista, sem markdown.
+
+Se os dados disserem que a empresa NÃO TEM site, diga isso de forma clara e curta: pode indicar empresa pequena ou com pouca presença digital, e o vendedor deve confirmar o porte real logo no início. Não cite número de funcionários: a faixa de funcionários do cadastro não é confiável; para o porte use o capital social e o regime tributário (Simples), quando houver."""
+
+# Contas "PROSPECT TSM": o insight sempre comeca com este aviso (pedido do usuario em 24/11/2026)
+PREFIXO_PROSPECT = "PROSPECT - VERIFICAR DISPONIBILIDADE DA CONTA."
+ABAS_PROSPECT = {"PROSPECT TSM"}
 
 
 def preparar() -> None:
@@ -132,6 +138,9 @@ def gerar_insight(cnpj: str, dados_empresa: str) -> str:
     texto = "\n".join(b.text for b in r.content if b.type == "text").strip()
     if texto:
         with dados.engine().begin() as conn:
+            aba = conn.execute(sa.text("SELECT aba FROM empresas WHERE cnpj = :c"), {"c": cnpj}).scalar() or ""
+            if aba.strip().upper() in ABAS_PROSPECT and not texto.upper().startswith(PREFIXO_PROSPECT[:20]):
+                texto = f"{PREFIXO_PROSPECT} {texto}"
             conn.execute(sa.text("INSERT INTO crm_insights (cnpj, texto, modelo, criado_em) VALUES (:c, :t, :m, :a) "
                                  "ON CONFLICT (cnpj) DO UPDATE SET texto = EXCLUDED.texto, criado_em = EXCLUDED.criado_em"),
                          {"c": cnpj, "t": texto, "m": MODELO_CLAUDE, "a": dados.agora()})
