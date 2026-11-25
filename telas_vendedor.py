@@ -495,7 +495,7 @@ def pagina_discador() -> None:
     else:
         faixa("📞", "Discador", "Ligações automáticas da campanha")
         quadro_espera("📵 Telefone desconectado", "Para começar, clique em **📞 Conectar telefone** na barra lateral. "
-                      "Depois clique em **▶ Começar a receber ligações** (o discador liga para você) ou em **☎ Prefiro ligar "
+                      "Depois clique em **Discador automático** (New Names ou Serviço: o discador liga para você) ou em **Prefiro ligar "
                       "manualmente** (você escolhe para quem ligar, pelas fichas).")
         st.caption("Só as chamadas feitas com o seu turno aberto vão para você.")
 
@@ -543,7 +543,7 @@ def explicar_sem_lista(est: dict, com_lista: list[str]) -> dict:
     if com_lista:
         passos.append("Enquanto isso, clique em **⏸ Parar de receber ligações** e comece por uma campanha que tem lista: "
                       + ", ".join(f"**{n}**" for n in com_lista) + ".")
-    passos.append("Ou use **☎ Prefiro ligar manualmente** e ligue pelos botões ☎ das fichas (Minha carteira e Funil New Names).")
+    passos.append("Ou use **Prefiro ligar manualmente** e ligue pelos botões ☎ das fichas (Minha carteira e Funil New Names).")
     return {"titulo": "Sem lista para ligar", "causa": motivo, "passos": passos}
 
 
@@ -645,10 +645,7 @@ def _comecar(s3: dict) -> None:
     else:
         nome = next(iter(camps))
         st.caption(f"Campanha: **{nome}**")
-    if st.button("▶ Começar a receber ligações", type="primary", use_container_width=True,
-                 help="O discador liga sozinho para a base e passa para você quem atender."):
-        entrar_modo(s3, camps[nome], manual=False)
-    if st.button("🆕 Discar New Names (automático)", use_container_width=True,
+    if st.button("Discador automático - New Names", type="primary", use_container_width=True,
                  help="O discador liga sozinho só para os New Names (empresas que não são clientes ativos da "
                       "TOTVS) e passa para você quem atender."):
         if nn:
@@ -656,7 +653,10 @@ def _comecar(s3: dict) -> None:
         else:
             st.warning("A campanha dos New Names ainda não existe na 3C. Crie a campanha, coloque seu ramal "
                        "nela e informe o id em CAMPANHA_NEW_NAMES (ou dê a ela um nome com \"New Names\").")
-    if st.button("☎ Prefiro ligar manualmente", use_container_width=True,
+    if st.button("Discador automático - Serviço", type="primary", use_container_width=True,
+                 help="O discador liga sozinho para a base de clientes ativos e passa para você quem atender."):
+        entrar_modo(s3, camps[nome], manual=False)
+    if st.button("Prefiro ligar manualmente", use_container_width=True,
                  help="O discador fica parado; você liga pelos botões ☎ das fichas."):
         entrar_modo(s3, camps[nome], manual=True)
 
@@ -679,8 +679,8 @@ def painel_na_linha() -> None:
             if s3 and tresc.status_ramal(s3["ramal"]) == 0:          # conectado, mas ainda fora da campanha
                 st.markdown("<div style='text-align:center;padding:30px 0 6px'><div style='font-size:30px;"
                             "font-weight:700;color:#1a7f4b'>📞 Ramal conectado</div><div style='color:#5b6b85;"
-                            "margin-top:8px'>Na barra lateral, clique em <b>▶ Começar a receber ligações</b> (o "
-                            "discador liga para você) ou em <b>☎ Prefiro ligar manualmente</b> (você escolhe para quem "
+                            "margin-top:8px'>Na barra lateral, clique em <b>Discador automático</b> (New Names ou Serviço; o "
+                            "discador liga para você) ou em <b>Prefiro ligar manualmente</b> (você escolhe para quem "
                             "ligar, pelas fichas).</div></div>", unsafe_allow_html=True)
                 return
             camp = s3.get("campanha_ativa") or s3.get("campanha")
