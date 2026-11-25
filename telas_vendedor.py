@@ -1394,12 +1394,110 @@ def pagina_visao_geral() -> None:
 
 # ---------------------------------------------------------------- Gestao (admin)
 
+def _dur(seg: float) -> str:
+    m = int(round(seg / 60))
+    return f"{m // 60}h{m % 60:02d}" if m >= 60 else f"{m} min"
+
+
+_FECHOU = {"fim do turno": "fim do turno", "inatividade": "aba fechada / sem sinal", "automatico": "limite de 12 h"}
+
+
+def painel_discador_gestao() -> None:
+    """Aba do gestor: ligacoes no periodo (por vendedor ou todos), quando o discador foi usado e ligacoes x tempo."""
+    import altair as alt
+    import pandas as pd
+
+    hoje = dados.agora().date()
+    vends = [v for v in V.lista() if v["ativo"]]
+    c1, c2 = st.columns([2, 1.4])
+    periodo = c1.date_input("Período", value=(hoje - dt.timedelta(days=6), hoje), format="DD/MM/YYYY",
+                            key="pd_periodo")
+    quem = c2.selectbox("Vendedor", ["Todos"] + [v["nome"] for v in vends], key="pd_vend")
+    if not isinstance(periodo, (tuple, list)) or len(periodo) != 2:
+        st.info("Escolha a data inicial e a final do período.")
+        return
+    ini, fim = periodo
+    vid = next((v["id"] for v in vends if v["nome"] == quem), None)
+    g = V.painel_discador(ini, fim, vid)
+    tot = g["tot"]
+
+    st.markdown("#### Ligações no período")
+    k = st.columns(4)
+    for col, rot, val in zip(k, ["Ligações do discador", "Atendidas", "Entraram na carteira", "Ligações manuais (fichas)"],
+                             [tot["chamadas"], tot["atendidas"], tot["carteira"], g["manuais"]]):
+        kpi(col, rot, val)
+    if g["por_dia"]:
+        df = pd.DataFrame(g["por_dia"]).melt("dia", var_name="tipo", value_name="n")
+        df["tipo"] = df["tipo"].map({"chamadas": "ligações", "carteira": "entraram na carteira"})
+        st.altair_chart(alt.Chart(df).mark_bar().encode(
+            x=alt.X("dia:T", title=None, axis=alt.Axis(format="%d/%m")), xOffset="tipo:N",
+            y=alt.Y("n:Q", title=None),
+            color=alt.Color("tipo:N", title=None, scale=alt.Scale(range=["#1565c0", "#22b5d8"])),
+            tooltip=["dia:T", "tipo", "n"]), use_container_width=True)
+    else:
+        st.info("Nenhuma ligação do discador nesse período.")
+
+    st.markdown("#### Quando o discador foi acessado")
+    turnos = g["turnos"]
+    if not turnos:
+        st.info("Ninguém abriu o discador nesse período.")
+    else:
+        agora = dados.agora()
+        linhas, barras = [], []
+        for t in turnos:
+            fim_t = t["fim"] or agora
+            linhas.append({"Data": f"{t['inicio']:%d/%m/%Y}", "Vendedor": t["nome"], "Início": f"{t['inicio']:%H:%M}",
+                           "Fim": f"{t['fim']:%H:%M}" if t["fim"] else "em aberto", "Duração": _dur(t["segundos"]),
+                           "Ligações": t["chamadas"], "Entraram na carteira": t["carteira"],
+                           "Encerrado": "em aberto" if not t["fim"] else _FECHOU.get(
+                               t["fechado_por"] or "", f"por {t['fechado_por']}" if t["fechado_por"] else "")})
+            h0 = t["inicio"].hour + t["inicio"].minute / 60
+            h1 = min(24.0, h0 + t["segundos"] / 3600)
+            barras.append({"Dia": f"{t['inicio']:%d/%m}", "ordem": t["inicio"].date().isoformat(),
+                           "Vendedor": t["nome"], "h0": h0, "h1": max(h1, h0 + 0.05),
+                           "Horário": f"{t['inicio']:%H:%M}–{fim_t:%H:%M}"})
+        db = pd.DataFrame(barras)
+        dias = list(dict.fromkeys(db.sort_values("ordem")["Dia"]))
+        st.altair_chart(alt.Chart(db).mark_bar(height=16, cornerRadius=3).encode(
+            y=alt.Y("Dia:N", sort=dias, title=None),
+            x=alt.X("h0:Q", title="hora do dia", scale=alt.Scale(domain=[6, 20]),
+                    axis=alt.Axis(values=list(range(6, 21, 2)), labelExpr="datum.value + 'h'")),
+            x2="h1:Q", color=alt.Color("Vendedor:N", title=None), tooltip=["Dia", "Vendedor", "Horário"]),
+            use_container_width=True)
+        st.dataframe(linhas, hide_index=True, use_container_width=True)
+        st.caption(f"{len(turnos)} acesso(s) ao discador · {_dur(g['segundos'])} de discador habilitado no período.")
+
+    st.markdown("#### Ligações × tempo habilitado")
+    if not g["resumo"]:
+        st.info("Sem dados nesse período.")
+    else:
+        linhas = []
+        for r in g["resumo"]:
+            horas = r["segundos"] / 3600
+            linhas.append({"Vendedor": r["nome"], "Tempo habilitado": _dur(r["segundos"]), "Ligações": r["chamadas"],
+                           "Atendidas": r["atendidas"], "Ligações por hora": round(r["chamadas"] / horas, 1) if horas else 0,
+                           "Entraram na carteira": r["carteira"],
+                           "% na carteira": f"{round(100 * r['carteira'] / r['chamadas'])}%" if r["chamadas"] else "—"})
+        seg = g["segundos"]
+        linhas.append({"Vendedor": "TOTAL", "Tempo habilitado": _dur(seg), "Ligações": tot["chamadas"],
+                       "Atendidas": tot["atendidas"],
+                       "Ligações por hora": round(tot["chamadas"] / (seg / 3600), 1) if seg else 0,
+                       "Entraram na carteira": tot["carteira"],
+                       "% na carteira": f"{round(100 * tot['carteira'] / tot['chamadas'])}%" if tot["chamadas"] else "—"})
+        st.dataframe(linhas, hide_index=True, use_container_width=True)
+        st.caption("Tempo habilitado = soma do tempo em que o discador ficou aberto (turnos). "
+                   "Ligações por hora = ligações ÷ tempo habilitado.")
+
+
 def pagina_gestao() -> None:
     mostrar_msg()
     faixa("⚙", "Gestão", "Vendedores e turnos do discador")
     fila = V.pendentes()
-    a_vend, a_turnos, a_ia = st.tabs([f"Vendedores{f' · {len(fila)} cadastro(s) novo(s)' if fila else ''}",
-                                      "Turnos do discador", "IA (resumo das ligações)"])
+    a_painel, a_vend, a_turnos, a_ia = st.tabs(["📊 Painel do discador",
+                                                f"Vendedores{f' · {len(fila)} cadastro(s) novo(s)' if fila else ''}",
+                                                "Turnos do discador", "IA (resumo das ligações)"])
+    with a_painel:
+        painel_discador_gestao()
     with a_ia:
         if ia_ligacoes.tem_chave():
             st.success("Chave da Anthropic configurada: o botão 🧠 Transcrever e resumir já funciona.")

@@ -1387,6 +1387,52 @@ def turnos_recentes(dias: int = 7) -> list[dict]:
                   d=dados.agora() - dt.timedelta(days=dias))
 
 
+def painel_discador(ini: dt.date, fim: dt.date, vendedor_id: int | None = None) -> dict:
+    """Painel do gestor: ligacoes do discador no periodo [ini, fim] (datas inclusivas), uso do discador (turnos) e
+    ligacoes x tempo habilitado por vendedor. `vendedor_id` None = todos."""
+    de = dt.datetime.combine(ini, dt.time.min)
+    ate = dt.datetime.combine(fim + dt.timedelta(days=1), dt.time.min)
+    agora = dados.agora()
+    p = {"de": de, "ate": ate}
+    vc = vt = vm = ""
+    if vendedor_id:
+        p["v"] = vendedor_id
+        vc, vt = "AND d.vendedor_id = :v", "AND t.vendedor_id = :v"
+        vm = "AND l.quem = (SELECT nome FROM crm_vendedores WHERE id = :v)"
+    atendida = "(d.duracao IS NOT NULL AND d.duracao <> '00:00:00')"
+    with dados.engine().connect() as conn:
+        tot = _q(conn, f"SELECT count(*) AS chamadas, count(*) FILTER (WHERE {atendida}) AS atendidas, "
+                       f"count(*) FILTER (WHERE d.entrou_carteira) AS carteira FROM crm_discador_chamadas d "
+                       f"WHERE d.quando >= :de AND d.quando < :ate {vc}", **p)[0]
+        por_dia = _q(conn, f"SELECT date(d.quando) AS dia, count(*) AS chamadas, "
+                           f"count(*) FILTER (WHERE d.entrou_carteira) AS carteira FROM crm_discador_chamadas d "
+                           f"WHERE d.quando >= :de AND d.quando < :ate {vc} GROUP BY 1 ORDER BY 1", **p)
+        por_vend = {r["vendedor_id"]: r for r in _q(
+            conn, f"SELECT d.vendedor_id, count(*) AS chamadas, count(*) FILTER (WHERE {atendida}) AS atendidas, "
+                  f"count(*) FILTER (WHERE d.entrou_carteira) AS carteira FROM crm_discador_chamadas d "
+                  f"WHERE d.quando >= :de AND d.quando < :ate {vc} GROUP BY 1", **p)}
+        manuais = _q(conn, f"SELECT count(*) AS total FROM crm_mv_ligacoes l "
+                           f"WHERE l.pedido_em >= :de AND l.pedido_em < :ate {vm}", **p)[0]["total"]
+        turnos = _q(conn, f"SELECT t.id, t.vendedor_id, v.nome, t.inicio, t.fim, t.fechado_por, "
+                          f"(SELECT count(*) FROM crm_discador_chamadas d WHERE d.turno_id = t.id) AS chamadas, "
+                          f"(SELECT count(*) FROM crm_discador_chamadas d WHERE d.turno_id = t.id "
+                          f"AND d.entrou_carteira) AS carteira FROM crm_discador_turnos t "
+                          f"JOIN crm_vendedores v ON v.id = t.vendedor_id "
+                          f"WHERE t.inicio >= :de AND t.inicio < :ate {vt} ORDER BY t.inicio DESC", **p)
+        nomes = {r["id"]: r["nome"] for r in _q(conn, "SELECT id, nome FROM crm_vendedores")}
+    seg_vend: dict[int, float] = {}
+    for t in turnos:
+        t["segundos"] = max(0.0, ((t["fim"] or agora) - t["inicio"]).total_seconds())
+        seg_vend[t["vendedor_id"]] = seg_vend.get(t["vendedor_id"], 0.0) + t["segundos"]
+    resumo = []
+    for vid in sorted(set(seg_vend) | set(por_vend), key=lambda i: nomes.get(i, "")):
+        c = por_vend.get(vid, {"chamadas": 0, "atendidas": 0, "carteira": 0})
+        resumo.append({"vendedor_id": vid, "nome": nomes.get(vid, "—"), "segundos": seg_vend.get(vid, 0.0),
+                       "chamadas": c["chamadas"], "atendidas": c["atendidas"], "carteira": c["carteira"]})
+    return {"tot": tot, "por_dia": por_dia, "manuais": manuais, "turnos": turnos, "resumo": resumo,
+            "segundos": sum(seg_vend.values())}
+
+
 def na_linha() -> dict | None:
     """A empresa que o discador esta com o vendedor agora (pelo CNPJ do mailing ou pelo telefone)."""
     try:
