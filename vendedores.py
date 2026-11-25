@@ -781,8 +781,8 @@ def lista() -> list[dict]:
 
 # Turnos de discagem (horario de Brasilia). O vendedor entra a qualquer hora DENTRO do turno e fica ate o fim
 # dele; no fim o turno fecha sozinho. Fora desses horarios so o administrador usa o discador.
-TURNOS = [(1, dt.time(8, 30), dt.time(9, 30)),
-          (2, dt.time(9, 40), dt.time(11, 40)),
+TURNOS = [(1, dt.time(8, 0), dt.time(10, 0)),
+          (2, dt.time(10, 0), dt.time(12, 0)),
           (3, dt.time(14, 0), dt.time(16, 0))]
 RESERVA_MIN = 10          # o 1o da fila de preferencia tem este tempo, a partir do inicio do turno, so para ele
 

@@ -142,8 +142,14 @@ def _escolher_reserva(opcoes: list, pergunta: str, avisos: list[str], com_data: 
 @st.dialog("Ramal ocupado")
 def _dialogo_ocupado(info: dict) -> None:
     if ss.get("rv_passo", 0) == 0:
-        st.markdown("**Ramal ocupado, você tem preferência para acessar no próximo turno. "
-                    "Deseja reservar seu acesso?**")
+        st.markdown("**Ramal ocupado. Este turno está sendo acessado por outro vendedor.**  \n"
+                    "**Você tem preferência para reservar no próximo turno.**")
+        st.markdown("**Como funcionam os turnos**  \n"
+                    "O discador funciona em turnos com horário fixo. Você pode entrar a qualquer momento dentro de um "
+                    "turno e fica até o final dele, quando o turno é encerrado. "
+                    "**No período de testes, cada turno pode ser acessado por um vendedor de cada vez.**")
+        st.markdown("**Horários dos turnos**  \n" + "  \n".join(V.linhas_turnos()))
+        st.markdown("**Deseja reservar o próximo turno?**")
         c1, c2 = st.columns(2)
         if c1.button("Sim", type="primary", use_container_width=True, key="rv_sim"):
             ss.rv_passo = 1
