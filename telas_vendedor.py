@@ -551,10 +551,7 @@ def conectar_3c_lateral() -> None:
     """Barra lateral, antes de conectar: um clique (senha da 3C guardada nos Secrets) ou, se ela nao
     estiver configurada, o ramal e a senha."""
     abrir_dialogo_ligacao()
-    t = V.turno_aberto()
-    if t and t["vendedor_id"] != eu()["id"]:
-        st.caption(f"🔴 Ramal ocupado por **{t['nome']}** desde {t['inicio']:%H:%M}." if eu().get("admin")
-                   else "🔴 Ramal ocupado por outro usuário.")
+    # o aviso de ramal ocupado so aparece ao abrir a pagina Discador ou clicar em Conectar telefone (nao aqui)
     if tresc.tem_senha_ramal():
         if st.button("📞 Conectar telefone", type="primary", use_container_width=True):
             with st.spinner("Conectando na 3C…"):
