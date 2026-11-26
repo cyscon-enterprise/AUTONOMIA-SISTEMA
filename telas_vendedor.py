@@ -36,7 +36,7 @@ def mostrar_msg() -> None:
     abrir_dialogo_ligacao()
     if ss.get("msg"):
         tipo, texto = ss.msg
-        (st.error if tipo == "erro" else st.success)(texto)
+        {"erro": st.error, "aviso": st.warning}.get(tipo, st.success)(texto)
         ss.msg = None
 
 
@@ -147,7 +147,8 @@ def _dialogo_ocupado(info: dict) -> None:
         st.markdown("**Como funcionam os turnos**  \n"
                     "O discador funciona em turnos com horário fixo. Você pode entrar a qualquer momento dentro de um "
                     "turno e fica até o final dele, quando o turno é encerrado. "
-                    "**No período de testes, cada turno pode ser acessado por um vendedor de cada vez.**")
+                    "**No período de testes, cada turno pode ser acessado por um vendedor de cada vez.** "
+                    "Fora dos horários dos turnos você pode ligar manualmente, sem o discador automático.")
         st.markdown("**Horários dos turnos**  \n" + "  \n".join(V.linhas_turnos()))
         st.markdown("**Deseja reservar o próximo turno?**")
         c1, c2 = st.columns(2)
@@ -520,6 +521,10 @@ def batimento() -> None:
         sair_3c()                                        # solta o ramal na 3C
     if info and info["fechado_por"] == "fim do turno" and info["numero"]:
         ss.fim_turno = info
+    elif info and info["fechado_por"] == "início do turno":
+        atual = V.turno_de(dados.agora())
+        ss.msg = ("aviso", f"Seu acesso para ligação manual foi encerrado porque o Turno {atual[0] if atual else ''} "
+                           "começou. Se quiser, conecte o telefone de novo para participar do turno.")
     st.rerun()
 
 
@@ -567,7 +572,8 @@ def conectar_3c_lateral() -> None:
         st.error(ss.pop("erro3c"))
     atual = V.turno_de(dados.agora())
     st.caption("**Turnos de discagem**  \n" + "  \n".join(
-        (f"**{l}** ← agora" if atual and l.startswith(f"Turno {atual[0]}:") else l) for l in V.linhas_turnos()))
+        (f"**{l}** ← agora" if atual and l.startswith(f"Turno {atual[0]}:") else l) for l in V.linhas_turnos())
+        + "  \nFora dos turnos: apenas ligação manual.")
 
 
 def sair_3c() -> None:
@@ -702,7 +708,15 @@ def bloqueia_sem_lista(s3: dict, campanha_id) -> bool:
 PAGINA_DISCADOR = None          # o st.Page do Discador (app.py preenche): "Comecar a receber ligacoes" leva para la
 
 
+def fora_do_turno() -> bool:
+    """Vendedor fora dos horarios dos turnos: so liga manualmente (o gestor usa tudo a qualquer hora)."""
+    return not eu().get("admin") and V.turno_de(dados.agora()) is None
+
+
 def entrar_modo(s3: dict, campanha, manual: bool) -> None:
+    if not manual and fora_do_turno():
+        st.error("Fora dos horários dos turnos só é possível ligar manualmente.")
+        return
     if not manual and bloqueia_sem_lista(s3, campanha):
         st.rerun()                                      # o pop-up "Sem lista para ligar" abre na proxima tela
     try:
@@ -772,17 +786,21 @@ def _comecar(s3: dict) -> None:
     else:
         nome = next(iter(camps))
         st.caption(f"Campanha: **{nome}**")
-    if st.button("Discador automático - New Names", type="primary", use_container_width=True,
-                 help="O discador liga sozinho só para os New Names (empresas que não são clientes ativos da "
-                      "TOTVS) e passa para você quem atender."):
-        if nn:
-            entrar_modo(s3, nn["id"], manual=False)
-        else:
-            st.warning("A campanha dos New Names ainda não existe na 3C. Crie a campanha, coloque seu ramal "
-                       "nela e informe o id em CAMPANHA_NEW_NAMES (ou dê a ela um nome com \"New Names\").")
-    if st.button("Discador automático - Serviço", type="primary", use_container_width=True,
-                 help="O discador liga sozinho para a base de clientes ativos e passa para você quem atender."):
-        entrar_modo(s3, camps[nome], manual=False)
+    if fora_do_turno():
+        st.caption("Fora dos horários dos turnos só é possível **ligar manualmente**. "
+                   "O discador automático volta a ficar disponível dentro dos turnos.")
+    else:
+        if st.button("Discador automático - New Names", type="primary", use_container_width=True,
+                     help="O discador liga sozinho só para os New Names (empresas que não são clientes ativos da "
+                          "TOTVS) e passa para você quem atender."):
+            if nn:
+                entrar_modo(s3, nn["id"], manual=False)
+            else:
+                st.warning("A campanha dos New Names ainda não existe na 3C. Crie a campanha, coloque seu ramal "
+                           "nela e informe o id em CAMPANHA_NEW_NAMES (ou dê a ela um nome com \"New Names\").")
+        if st.button("Discador automático - Serviço", type="primary", use_container_width=True,
+                     help="O discador liga sozinho para a base de clientes ativos e passa para você quem atender."):
+            entrar_modo(s3, camps[nome], manual=False)
     if st.button("Prefiro ligar manualmente", use_container_width=True,
                  help="O discador fica parado; você liga pelos botões ☎ das fichas."):
         entrar_modo(s3, camps[nome], manual=True)
@@ -1238,6 +1256,10 @@ def ficha_cliente(cnpj: str) -> None:
                 if outro:
                     aviso_linha_ocupada(outro)
                     st.rerun()
+                meu = V.turno_aberto()
+                if not (meu and meu["vendedor_id"] == eu()["id"]) and not eu().get("admin"):
+                    ss.msg = ("erro", "Conecte o telefone na barra lateral (📞 Conectar telefone) antes de ligar.")
+                    st.rerun()
                 with st.spinner("Pedindo a ligação à 3C (pode levar até 1 minuto)…"):
                     try:
                         tresc.ligar("55" + t["tel"], ramal)
@@ -1330,6 +1352,9 @@ def pagina_funil_servicos() -> None:
 
 # ---------------------------------------------------------------- Visao geral (admin)
 
+ALTURA_GRAFICO = 300          # os dois graficos da Visao geral com a mesma altura: as legendas ficam alinhadas
+
+
 def pagina_visao_geral() -> None:
     """Painel do administrador: funil, produtividade por vendedor e discador, numa tela."""
     import altair as alt
@@ -1350,21 +1375,31 @@ def pagina_visao_geral() -> None:
     esq, dir_ = st.columns([1, 1], gap="large")
     with esq:
         st.markdown("#### Funil New Names")
+        escolha = st.selectbox("Funil de", ["Todos", "Sem dono (pool)"] + [v["nome"] for v in vend],
+                               key="vg_funil", label_visibility="collapsed")
+        if escolha == "Todos":
+            cards = q["cards"]
+        elif escolha.startswith("Sem dono"):
+            donos = V.cnpjs_com_dono()
+            cards = [c for c in q["cards"] if c["cnpj"] not in donos]
+        else:
+            cards = dados.quadro(next(v["id"] for v in vend if v["nome"] == escolha))["cards"]
         cont = {e["nome"]: 0 for e in q["etapas"]}
-        for c in q["cards"]:
+        for c in cards:
             cont[c["etapa"]] = cont.get(c["etapa"], 0) + 1
         df = pd.DataFrame([{"etapa": e["nome"], "leads": cont[e["nome"]], "cor": e["cor"], "ordem": i}
                            for i, e in enumerate(q["etapas"])])
         st.altair_chart(
-            alt.Chart(df).mark_bar(cornerRadiusEnd=4).encode(
+            (alt.Chart(df).mark_bar(cornerRadiusEnd=4).encode(
                 y=alt.Y("etapa:N", sort=alt.SortField("ordem"), title=None),
                 x=alt.X("leads:Q", title="leads"),
                 color=alt.Color("cor:N", scale=None), tooltip=["etapa", "leads"])
-            + alt.Chart(df).mark_text(align="left", dx=4, color="#1b2a41").encode(
-                y=alt.Y("etapa:N", sort=alt.SortField("ordem")), x="leads:Q", text="leads:Q"),
+             + alt.Chart(df).mark_text(align="left", dx=4, color="#1b2a41").encode(
+                 y=alt.Y("etapa:N", sort=alt.SortField("ordem")), x="leads:Q", text="leads:Q")
+             ).properties(height=ALTURA_GRAFICO),
             use_container_width=True)
-        atr = sum(1 for c in q["cards"] if c["atrasado"])
-        st.caption(f"{len(q['cards'])} leads · {atr} retorno(s) atrasado(s)")
+        atr = sum(1 for c in cards if c["atrasado"])
+        st.caption(f"{len(cards)} leads · {atr} retorno(s) atrasado(s)")
     with dir_:
         st.markdown("#### Chamadas do discador por dia")
         if g["por_dia"]:
@@ -1374,7 +1409,7 @@ def pagina_visao_geral() -> None:
                 x=alt.X("dia:T", title=None, axis=alt.Axis(format="%d/%m")), xOffset="tipo:N",
                 y=alt.Y("n:Q", title=None), color=alt.Color("tipo:N", title=None,
                                                              scale=alt.Scale(range=["#1565c0", "#22b5d8"])),
-                tooltip=["dia:T", "tipo", "n"]), use_container_width=True)
+                tooltip=["dia:T", "tipo", "n"]).properties(height=ALTURA_GRAFICO), use_container_width=True)
         else:
             st.info("Nenhuma chamada do discador no período.")
         m = g["manuais"]

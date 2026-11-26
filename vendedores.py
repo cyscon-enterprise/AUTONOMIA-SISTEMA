@@ -877,6 +877,12 @@ def _fechar_esquecidos(conn) -> None:
         if t and agora >= t[2]:
             conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = :f, fechado_por = 'fim do turno' "
                                  "WHERE id = :i AND fim IS NULL"), {"f": t[2], "i": r["id"]})
+    # acesso manual fora dos turnos (vendedor): quando um turno comeca, ele acaba, para liberar o ramal
+    atual = turno_de(agora)
+    if atual:
+        conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = :f, fechado_por = 'início do turno' "
+                             "WHERE fim IS NULL AND inicio < :f AND vendedor_id IN "
+                             "(SELECT id FROM crm_vendedores WHERE NOT admin)"), {"f": atual[1]})
     conn.execute(sa.text("UPDATE crm_discador_turnos SET fim = inicio + make_interval(hours => :h), "
                          "fechado_por = 'automatico' WHERE fim IS NULL AND inicio < :lim"),
                  {"h": TURNO_MAX_H, "lim": dados.agora() - dt.timedelta(hours=TURNO_MAX_H)})
@@ -904,11 +910,10 @@ def iniciar_turno(vend: dict) -> dict:
             # quem tentou e achou o ramal ocupado tem preferencia no proximo turno: a tela pergunta se quer reservar
             return {"erro": f"Ramal ocupado por {quem}.", "tipo": "ocupado", "opcoes": opcoes_reserva(dados.agora())}
         agora = dados.agora()
-        if not vend.get("admin"):                               # o gestor usa o discador a qualquer hora
-            atual = turno_de(agora)
-            if not atual:
-                return {"erro": "Fora do horário dos turnos de discagem.\n\n" + "  \n".join(linhas_turnos()),
-                        "tipo": "fora"}
+        # Fora dos horarios dos turnos o vendedor conecta o telefone so para ligar MANUALMENTE (a tela nao oferece o
+        # discador automatico); esse acesso fecha quando um turno comeca. Dentro de um turno vale a reserva.
+        atual = turno_de(agora)
+        if atual and not vend.get("admin"):
             n, ini, _ = atual
             fila = _fila(conn, ini.date(), n)
             if fila and fila[0] != vend["id"] and agora < ini + dt.timedelta(minutes=RESERVA_MIN):
@@ -1385,6 +1390,12 @@ def turnos_recentes(dias: int = 7) -> list[dict]:
                         "AND d.entrou_carteira) AS carteira FROM crm_discador_turnos t "
                         "JOIN crm_vendedores v ON v.id = t.vendedor_id WHERE t.inicio >= :d ORDER BY t.id DESC",
                   d=dados.agora() - dt.timedelta(days=dias))
+
+
+def cnpjs_com_dono() -> set[str]:
+    """CNPJs que estao na carteira de algum vendedor (os demais estao no pool de contas)."""
+    with dados.engine().connect() as conn:
+        return {r["cnpj"] for r in _q(conn, "SELECT DISTINCT cnpj FROM crm_carteira")}
 
 
 def painel_discador(ini: dt.date, fim: dt.date, vendedor_id: int | None = None) -> dict:
