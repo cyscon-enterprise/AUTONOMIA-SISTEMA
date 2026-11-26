@@ -64,6 +64,7 @@ DDL = [
         fim TIMESTAMP,
         fechado_por VARCHAR(60))""",
     "ALTER TABLE crm_discador_turnos ADD COLUMN IF NOT EXISTS ultimo_sinal TIMESTAMP",
+    "CREATE INDEX IF NOT EXISTS ix_empresas_aba_nome ON empresas (aba, nome)",       # pool do gestor: pagina por aba
     """CREATE TABLE IF NOT EXISTS crm_turno_fila (
         id SERIAL PRIMARY KEY,
         data DATE NOT NULL,
@@ -1331,6 +1332,64 @@ def pool_resumo() -> dict:
                       "(SELECT 1 FROM crm_carteira c WHERE c.cnpj = l.cnpj) ORDER BY l.id")
         sem_cnpj = conn.execute(sa.text(f"SELECT count(*) FROM {dados.FONTE} WHERE cnpj IS NULL")).scalar()
     return {"total": total, "new_names": nn, "new_names_sem_cnpj": sem_cnpj}
+
+
+_ABA_SQL = "coalesce(nullif(trim(e.aba), ''), '(sem aba)')"
+
+
+def pool_abas() -> list[dict]:
+    """Todos os leads do CRM TOTVS (a mestra), agrupados por aba: total e quantos ainda estao sem dono."""
+    def nome(a) -> str:                        # agrupa pela coluna crua (usa o indice) e normaliza aqui
+        return (a or "").strip() or "(sem aba)"
+    with dados.engine().connect() as conn:
+        tot_raw = _q(conn, "SELECT e.aba, count(*) AS total FROM empresas e GROUP BY e.aba")
+        com_raw = _q(conn, "SELECT e.aba, count(DISTINCT e.cnpj) AS n FROM crm_carteira c "
+                           "JOIN empresas e ON e.cnpj = c.cnpj GROUP BY e.aba")
+    tot: dict[str, int] = {}
+    for r in tot_raw:
+        tot[nome(r["aba"])] = tot.get(nome(r["aba"]), 0) + r["total"]
+    com: dict[str, int] = {}
+    for r in com_raw:
+        com[nome(r["aba"])] = com.get(nome(r["aba"]), 0) + r["n"]
+    return [{"aba": a, "total": n, "sem_dono": n - com.get(a, 0)} for a, n in sorted(tot.items(), key=lambda x: -x[1])]
+
+
+def _pool_where(aba: str, busca: str, filtro: str) -> tuple[str, dict]:
+    # "= :aba" usa o indice ix_empresas_aba; so a aba vazia precisa da forma longa
+    w, p = (["(e.aba IS NULL OR trim(e.aba) = '')"], {}) if aba == "(sem aba)" else (["e.aba = :aba"], {"aba": aba})
+    if filtro == "sem_dono":
+        w.append("d.cnpj IS NULL")
+    elif filtro == "com_dono":
+        w.append("d.cnpj IS NOT NULL")
+    t = (busca or "").strip()
+    if t:
+        dig = "".join(ch for ch in t if ch.isdigit())
+        w.append("(e.nome ILIKE :t OR e.nome_fantasia ILIKE :t OR e.cidade ILIKE :t" + (" OR e.cnpj LIKE :c" if dig else "") + ")")
+        p["t"] = f"%{t}%"
+        if dig:
+            p["c"] = f"{dig}%"
+    return " AND ".join(w), p
+
+
+_POOL_FROM = ("FROM empresas e LEFT JOIN (SELECT c.cnpj, v.nome FROM crm_carteira c "
+              "JOIN crm_vendedores v ON v.id = c.vendedor_id) d ON d.cnpj = e.cnpj")
+
+
+def pool_contar(aba: str, busca: str = "", filtro: str = "todos") -> int:
+    where, p = _pool_where(aba, busca, filtro)
+    origem = _POOL_FROM if filtro != "todos" else "FROM empresas e"          # sem o JOIN quando nao precisa do dono
+    with dados.engine().connect() as conn:
+        return conn.execute(sa.text(f"SELECT count(*) {origem} WHERE {where}"), p).scalar()
+
+
+def pool_leads(aba: str, busca: str = "", filtro: str = "todos", limite: int = 50, pagina: int = 1) -> list[dict]:
+    """Uma pagina dos leads de uma aba (com o dono, quando ja tem). `filtro`: todos | sem_dono | com_dono."""
+    where, p = _pool_where(aba, busca, filtro)
+    p |= {"n": limite, "o": max(0, pagina - 1) * limite}
+    with dados.engine().connect() as conn:
+        return _q(conn, f"SELECT e.cnpj, coalesce(e.nome_fantasia, e.nome) AS nome, e.nome AS razao, e.cidade, e.estado, "
+                        f"e.porte_da_empresa AS porte, e.situacao_empresa AS situacao, e.telefone_1 AS telefone, "
+                        f"d.nome AS dono {_POOL_FROM} WHERE {where} ORDER BY e.nome LIMIT :n OFFSET :o", **p)
 
 
 def pool_buscar(texto: str, limite: int = 40) -> list[dict]:

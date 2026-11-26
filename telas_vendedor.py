@@ -1050,6 +1050,68 @@ def pagina_carteiras_todos() -> None:
     _carteira(todos=True)
 
 
+def _milhar(n) -> str:
+    return f"{int(n):,}".replace(",", ".")
+
+
+def _cnpj_fmt(c: str) -> str:
+    c = "".join(ch for ch in str(c or "") if ch.isdigit())
+    return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}" if len(c) == 14 else c
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _pool_abas_cache() -> list[dict]:
+    return V.pool_abas()
+
+
+def _pool_todos_por_aba(op: dict[str, int]) -> None:
+    """Todos os leads do CRM TOTVS (a mestra), uma aba por vez (as abas da planilha), com o dono de cada um e a
+    atribuicao dos que ainda estao sem dono."""
+    abas = _pool_abas_cache()
+    if not abas:
+        st.info("Nenhum lead cadastrado.")
+        return
+    rot = {f"{a['aba']} · {_milhar(a['total'])}": a for a in abas}
+    esc = st.pills("Aba", list(rot), selection_mode="single", default=next(iter(rot)), key="pool_aba",
+                   label_visibility="collapsed") or next(iter(rot))
+    a = rot[esc]
+    aba = a["aba"]
+    st.caption(f"**{aba}**: {_milhar(a['total'])} leads · {_milhar(a['sem_dono'])} sem dono · "
+               f"{_milhar(a['total'] - a['sem_dono'])} já estão com vendedor")
+    c1, c2 = st.columns([3, 1.4])
+    busca = c1.text_input("Buscar nesta aba (nome, CNPJ ou cidade)", key=f"pool_b_{aba}")
+    mostrar = c2.selectbox("Mostrar", ["Todos", "Só sem dono", "Só com dono"], key=f"pool_f_{aba}")
+    filtro = {"Todos": "todos", "Só sem dono": "sem_dono", "Só com dono": "com_dono"}[mostrar]
+    total = V.pool_contar(aba, busca, filtro)
+    por = 50
+    paginas = max(1, -(-total // por))
+    if total == 0:
+        st.info("Nenhum lead com esse filtro nesta aba.")
+        return
+    pagina = st.number_input(f"Página (de {_milhar(paginas)}) · {_milhar(total)} lead(s)", 1, paginas, 1,
+                             key=f"pool_p_{aba}_{busca}_{filtro}")
+    rows = V.pool_leads(aba, busca, filtro, por, int(pagina))
+    tabela = [{"Empresa": r["nome"], "CNPJ": _cnpj_fmt(r["cnpj"]), "Cidade/UF": f"{r['cidade'] or ''}/{r['estado'] or ''}",
+               "Porte": r["porte"] or "", "Situação": r["situacao"] or "", "Telefone": r["telefone"] or "",
+               "Dono": r["dono"] or "— pool —"} for r in rows]
+    ev = st.dataframe(tabela, hide_index=True, use_container_width=True, on_select="rerun", selection_mode="multi-row",
+                      key=f"pool_df_{aba}_{pagina}_{busca}_{filtro}")
+    sel = [rows[i] for i in ev.selection.rows if i < len(rows)]
+    livres = [r["cnpj"] for r in sel if not r["dono"]]
+    cc1, cc2 = st.columns([2, 1.4])
+    para = cc1.selectbox("Atribuir a", list(op), key="pool_para_todos")
+    cc2.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+    if cc2.button(f"Atribuir {len(livres)} selecionado(s)", type="primary", disabled=not livres,
+                  key="pool_btn_todos", use_container_width=True):
+        avisar(V.atribuir_lote(eu(), livres, op[para]))
+        _pool_abas_cache.clear()
+        st.rerun()
+    if sel and len(livres) < len(sel):
+        st.caption(f"{len(sel) - len(livres)} selecionado(s) já têm dono e não serão alterados "
+                   "(para trocar de dono, use Carteiras).")
+    st.caption(f"Mostrando {len(rows)} de {_milhar(total)}. Marque as linhas para atribuir a um vendedor.")
+
+
 def pagina_pool() -> None:
     """So do administrador: o pool de contas (empresas sem vendedor) e a atribuicao a um vendedor."""
     mostrar_msg()
@@ -1061,7 +1123,8 @@ def pagina_pool() -> None:
         st.info("Não há vendedores ativos para receber clientes.")
         return
     op = {v["nome"]: v["id"] for v in vends}
-    aba_nn, aba_busca = st.tabs([f"New Names sem dono ({len(r['new_names'])})", "Buscar no pool"])
+    aba_todos, aba_nn, aba_busca = st.tabs(["Todos os leads por aba", f"New Names sem dono ({len(r['new_names'])})",
+                                            "Buscar no pool"])
 
     def atribuir(escolhas: dict[str, str], chave: str) -> None:
         sel = st.multiselect("Clientes", list(escolhas), key=f"sel_{chave}")
@@ -1070,6 +1133,8 @@ def pagina_pool() -> None:
             avisar(V.atribuir_lote(eu(), [escolhas[s] for s in sel], op[para]))
             st.rerun()
 
+    with aba_todos:
+        _pool_todos_por_aba(op)
     with aba_nn:
         if r["new_names_sem_cnpj"]:
             st.caption(f"{r['new_names_sem_cnpj']} lead(s) do funil sem CNPJ não entram no pool (a carteira é por CNPJ).")
